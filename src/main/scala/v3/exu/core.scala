@@ -1034,7 +1034,9 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
       Causes.fetch_access.U,
       Causes.load_page_fault.U,
       Causes.store_page_fault.U,
-      Causes.fetch_page_fault.U)
+      Causes.fetch_page_fault.U,
+      Causes.floating_point.U,
+    )
 
   csr.io.tval := Mux(tval_valid,
     RegNext(encodeVirtualAddress(rob.io.com_xcpt.bits.badvaddr, rob.io.com_xcpt.bits.badvaddr)), 0.U)

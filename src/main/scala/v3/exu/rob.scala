@@ -259,6 +259,21 @@ class Rob(
   val r_xcpt_badvaddr  = Reg(UInt(coreMaxAddrBits.W))
   io.flush_frontend := r_xcpt_val
 
+  /* A wire to build a proper exception when FP exceptions occur. This mirrors
+   * what lxcpt and csr_replay do in the RobIo bundle.
+   * We need to be able to track an FP instruction so that we only take the
+   * exception from the oldest instruction.
+   *
+   * I am not a fan of adding this identifier. I believe having all of this
+   * information tracked on the uop and presented by an FU is a better solution.
+   * FIXME: Would having the FPU FU raise the exception make things better?
+   * Then we just add another entry to the RobIo, and we can remove some stuff?
+   *
+   * TODO: Will this break with multiple FP exceptions back-to-back? */
+  val fp_xcpt = Wire(Valid(new Exception()))
+  fp_xcpt.valid := false.B
+  fp_xcpt.bits  := DontCare
+
   //--------------------------------------------------
   // Utility
 
@@ -399,6 +414,48 @@ class Rob(
     when (io.csr_replay.valid && MatchBank(GetBankIdx(io.csr_replay.bits.uop.rob_idx))) {
       rob_exception(GetRowIdx(io.csr_replay.bits.uop.rob_idx)) := true.B
     }
+
+    /* When an FPU instruction has an FP event (exception), we must mark this
+     * uop in the ROB as being exceptional. Then when we reach the head of the
+     * ROB, we dispatch to the exception handler.
+     *
+     * NOTE: We rely on the accrual of fflags happening somewhere else in the
+     * ROB. In this case, it happens above, but we do not have top-down
+     * execution, so exact location is not important. Just the presence of
+     * accrual is enough. */
+    for (i <- 0 until numFpuPorts) {
+      val fp_uop = io.fflags(i).bits.uop
+      when (io.fflags(i).valid && MatchBank(GetBankIdx(fp_uop.rob_idx))) {
+        val rob_row = GetRowIdx(fp_uop.rob_idx)
+        val og_fflags = rob_fflags(w)(GetRowIdx(fp_uop.rob_idx))
+        val new_fflags = io.fflags(i).bits.flags
+
+        /* Only mark uop as exception in ROB when fflags change betwen what the
+         * uop had before and the new set of flags. If nothing changed, then
+         * there was no FP event, so we cannot raise an exception. If any single
+         * bit DID change, then we must flag this as an exception, ONLY when the
+         * fflags_care CSR has been set.
+         * NOTE: Unlike in Rocket, we do NOT need to worry about CSR set/write
+         * changing the flags and us raising an exception incorrectly, since
+         * BOOM does NOT change fflags on the CSR set/write uop.
+         * FIXME: Make use of the fp_xcpt flag coming from the CSRFile. */
+        val fflags_changed = (og_fflags ^ new_fflags).orR
+
+        // Mark the ROB row this uop is in as exceptional
+        rob_exception(rob_row) := fflags_changed
+        // Build an exception that we can use for passing out of the ROB
+        fp_xcpt.valid := fflags_changed
+        fp_xcpt.bits.uop := fp_uop
+        fp_xcpt.bits.cause := freechips.rocketchip.rocket.Causes.floating_point.U
+        /* FIXME: We should NOT use debug_pc here. Recover PC using ftq[ftq_idx]
+         * and pc_lob (which ARE defined on the uop, see common/micro-op.scala).
+         * Alternatively, the FU should raise the exception and provide the
+         * vaddr.
+         * XXX: We use this as a hacky workaround just to get things working. */
+        fp_xcpt.bits.badvaddr := fp_uop.debug_pc
+      }
+    }
+
     can_throw_exception(w) := rob_val(rob_head) && rob_exception(rob_head)
 
     //-----------------------------------------------
@@ -636,9 +693,29 @@ class Rob(
 
   when (!(io.flush.valid || exception_thrown) && rob_state =/= s_rollback) {
 
-    val new_xcpt_valid = io.lxcpt.valid || io.csr_replay.valid
-    val lxcpt_older = !io.csr_replay.valid || (IsOlder(io.lxcpt.bits.uop.rob_idx, io.csr_replay.bits.uop.rob_idx, rob_head_idx) && io.lxcpt.valid)
-    val new_xcpt = Mux(lxcpt_older, io.lxcpt.bits, io.csr_replay.bits)
+    val new_xcpt_valid = io.lxcpt.valid || io.csr_replay.valid || fp_xcpt.valid
+
+    /* Determine which exception is the oldest.
+     * We need to disambiguate between an exception that just showed up because
+     * it came from a LD/ST or CSR (in which case it is an older instruction) or
+     * it is a decode exception (in which case it is a newer instruction).
+     * We find which instruction is oldest ("higher" in the ROB) and take that
+     * exception.
+     * TODO: Give example when this can happen! */
+    /* FIXME: Determining which uop is older should probably be more elegant. */
+    val lxcpt_older_than_csr_replay = !io.csr_replay.valid ||
+          (IsOlder(io.lxcpt.bits.uop.rob_idx, io.csr_replay.bits.uop.rob_idx, rob_head_idx) && io.lxcpt.valid)
+    val lxcpt_older_than_fp_xcpt = !fp_xcpt.valid ||
+          (IsOlder(io.lxcpt.bits.uop.rob_idx, fp_xcpt.bits.uop.rob_idx, rob_head_idx) && io.lxcpt.valid)
+    val csr_replay_older_than_fp_xcpt = !fp_xcpt.valid ||
+          (IsOlder(io.csr_replay.bits.uop.rob_idx, fp_xcpt.bits.uop.rob_idx, rob_head_idx) && io.csr_replay.valid)
+
+    val lxcpt_oldest      =  lxcpt_older_than_csr_replay &&  lxcpt_older_than_fp_xcpt
+    val csr_replay_oldest = !lxcpt_older_than_csr_replay &&  csr_replay_older_than_fp_xcpt
+    val fp_xcpt_oldest    = !lxcpt_older_than_fp_xcpt    && !csr_replay_older_than_fp_xcpt
+
+    val new_xcpt = Mux(lxcpt_oldest, io.lxcpt.bits,
+                     Mux(csr_replay_oldest, io.csr_replay.bits, fp_xcpt.bits))
 
     when (new_xcpt_valid) {
       when (!r_xcpt_val || IsOlder(new_xcpt.uop.rob_idx, r_xcpt_uop.rob_idx, rob_head_idx)) {

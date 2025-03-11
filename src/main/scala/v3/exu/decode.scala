@@ -104,7 +104,7 @@ object X32Decode extends DecodeConstants
             //     |  |  is single-prec?                        rs1 regtype     |  |     |  uses_stq           |    |  |
             //     |  |  |  micro-code                          |       rs2 type|  |     |  |  is_amo          |    |  |
             //     |  |  |  |         iq-type  func unit        |       |       |  |     |  |  |  is_fence     |    |  |
-            //     |  |  |  |         |        |                |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint or ecall?
+            //     |  |  |  |         |        |                |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint, ecall, or estep?
             //     |  |  |  |         |        |        dst     |       |       |  |     |  |  |  |  |  mem    |    |  |  |  is unique? (clear pipeline for it)
             //     |  |  |  |         |        |        regtype |       |       |  |     |  |  |  |  |  cmd    |    |  |  |  |  flush on commit
             //     |  |  |  |         |        |        |       |       |       |  |     |  |  |  |  |  |      |    |  |  |  |  |  csr cmd
@@ -129,7 +129,7 @@ object X64Decode extends DecodeConstants
            //     |  |  is single-prec?                        rs1 regtype     |  |     |  uses_stq           |    |  |
            //     |  |  |  micro-code                          |       rs2 type|  |     |  |  is_amo          |    |  |
            //     |  |  |  |         iq-type  func unit        |       |       |  |     |  |  |  is_fence     |    |  |
-           //     |  |  |  |         |        |                |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint or ecall?
+           //     |  |  |  |         |        |                |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint, ecall, or estep??
            //     |  |  |  |         |        |        dst     |       |       |  |     |  |  |  |  |  mem    |    |  |  |  is unique? (clear pipeline for it)
            //     |  |  |  |         |        |        regtype |       |       |  |     |  |  |  |  |  cmd    |    |  |  |  |  flush on commit
            //     |  |  |  |         |        |        |       |       |       |  |     |  |  |  |  |  |      |    |  |  |  |  |  csr cmd
@@ -166,7 +166,7 @@ object XDecode extends DecodeConstants
            //     |  |  is single-prec?                        rs1 regtype     |  |     |  uses_stq           |    |  |
            //     |  |  |  micro-code                          |       rs2 type|  |     |  |  is_amo          |    |  |
            //     |  |  |  |         iq-type  func unit        |       |       |  |     |  |  |  is_fence     |    |  |
-           //     |  |  |  |         |        |                |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint or ecall?
+           //     |  |  |  |         |        |                |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint, ecall, or estep??
            //     |  |  |  |         |        |        dst     |       |       |  |     |  |  |  |  |  mem    |    |  |  |  is unique? (clear pipeline for it)
            //     |  |  |  |         |        |        regtype |       |       |  |     |  |  |  |  |  cmd    |    |  |  |  |  flush on commit
            //     |  |  |  |         |        |        |       |       |       |  |     |  |  |  |  |  |      |    |  |  |  |  |  csr cmd
@@ -238,6 +238,7 @@ object XDecode extends DecodeConstants
   SFENCE_VMA->List(Y,N, X, uopSFENCE,IQT_MEM, FU_MEM , RT_X  , RT_FIX, RT_FIX, N, IS_X, N, N, N, N, N,M_SFENCE,0.U,N, N, N, Y, Y, CSR.N),
   ECALL   -> List(Y, N, X, uopERET  ,IQT_INT, FU_CSR , RT_X  , RT_X  , RT_X  , N, IS_I, N, N, N, N, N, M_X  , 0.U, N, N, Y, Y, Y, CSR.I),
   EBREAK  -> List(Y, N, X, uopERET  ,IQT_INT, FU_CSR , RT_X  , RT_X  , RT_X  , N, IS_I, N, N, N, N, N, M_X  , 0.U, N, N, Y, Y, Y, CSR.I),
+  ESTEP   -> List(Y, N, X, uopERET  ,IQT_INT, FU_CSR , RT_X  , RT_X  , RT_X  , N, IS_I, N, N, N, N, N, M_X  , 0.U, N, N, Y, Y, Y, CSR.I),
   URET    -> List(Y, N, X, uopERET  ,IQT_INT, FU_CSR , RT_X  , RT_X  , RT_X  , N, IS_I, N, N, N, N, N, M_X  , 0.U, N, N, N, Y, Y, CSR.I),
   SRET    -> List(Y, N, X, uopERET  ,IQT_INT, FU_CSR , RT_X  , RT_X  , RT_X  , N, IS_I, N, N, N, N, N, M_X  , 0.U, N, N, N, Y, Y, CSR.I),
   MRET    -> List(Y, N, X, uopERET  ,IQT_INT, FU_CSR , RT_X  , RT_X  , RT_X  , N, IS_I, N, N, N, N, N, M_X  , 0.U, N, N, N, Y, Y, CSR.I),
@@ -255,7 +256,7 @@ object XDecode extends DecodeConstants
            //     |  |  is single-prec?                        rs1 regtype     |  |     |  uses_stq              |   |  |
            //     |  |  |  micro-code                          |       rs2 type|  |     |  |  is_amo             |   |  |
            //     |  |  |  |          iq-type  func unit       |       |       |  |     |  |  |  is_fence        |   |  |
-           //     |  |  |  |          |        |               |       |       |  |     |  |  |  |  is_fencei    |   |  |  is breakpoint or ecall?
+           //     |  |  |  |          |        |               |       |       |  |     |  |  |  |  is_fencei    |   |  |  is breakpoint, ecall, or estep??
            //     |  |  |  |          |        |       dst     |       |       |  |     |  |  |  |  |  mem       |   |  |  |  is unique? (clear pipeline for it)
            //     |  |  |  |          |        |       regtype |       |       |  |     |  |  |  |  |  cmd       |   |  |  |  |  flush on commit
            //     |  |  |  |          |        |       |       |       |       |  |     |  |  |  |  |  |         |   |  |  |  |  |  csr cmd
@@ -299,7 +300,7 @@ object FDecode extends DecodeConstants
             //    is val inst?                                  rs1 regtype     |  |     |  uses_stq           |    |  |
             //    |  is fp inst?                                |       rs2 type|  |     |  |  is_amo          |    |  |
             //    |  |  is dst single-prec?                     |       |       |  |     |  |  |  is_fence     |    |  |
-            //    |  |  |  micro-opcode                         |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint or ecall
+            //    |  |  |  micro-opcode                         |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint, ecall, or estep?
             //    |  |  |  |           iq_type  func    dst     |       |       |  |     |  |  |  |  |  mem    |    |  |  |  is unique? (clear pipeline for it)
             //    |  |  |  |           |        unit    regtype |       |       |  |     |  |  |  |  |  cmd    |    |  |  |  |  flush on commit
             //    |  |  |  |           |        |       |       |       |       |  |     |  |  |  |  |  |      |    |  |  |  |  |  csr cmd
@@ -393,7 +394,7 @@ object FDivSqrtDecode extends DecodeConstants
             //     is val inst?                                 rs1 regtype     |  |     |  uses_stq           |    |  |
             //     |  is fp inst?                               |       rs2 type|  |     |  |  is_amo          |    |  |
             //     |  |  is dst single-prec?                    |       |       |  |     |  |  |  is_fence     |    |  |
-            //     |  |  |  micro-opcode                        |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint or ecall
+            //     |  |  |  micro-opcode                        |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint, ecall, or estep?
             //     |  |  |  |           iq-type func    dst     |       |       |  |     |  |  |  |  |  mem    |    |  |  |  is unique? (clear pipeline for it)
             //     |  |  |  |           |       unit    regtype |       |       |  |     |  |  |  |  |  cmd    |    |  |  |  |  flush on commit
             //     |  |  |  |           |       |       |       |       |       |  |     |  |  |  |  |  |      |    |  |  |  |  |  csr cmd
@@ -417,7 +418,7 @@ object RoCCDecode extends DecodeConstants
                        //     |  |  is single-prec                          rs1 regtype     |  |     |  uses_stq           |    |  |
                        //     |  |  |                                       |       rs2 type|  |     |  |  is_amo          |    |  |
                        //     |  |  |  micro-code           func unit       |       |       |  |     |  |  |  is_fence     |    |  |
-                       //     |  |  |  |           iq-type  |               |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint or ecall?
+                       //     |  |  |  |           iq-type  |               |       |       |  |     |  |  |  |  is_fencei |    |  |  is breakpoint, ecall, or estep??
                        //     |  |  |  |           |        |       dst     |       |       |  |     |  |  |  |  |  mem    |    |  |  |  is unique? (clear pipeline for it)
                        //     |  |  |  |           |        |       regtype |       |       |  |     |  |  |  |  |  cmd    |    |  |  |  |  flush on commit
                        //     |  |  |  |           |        |       |       |       |       |  |     |  |  |  |  |  |      |    |  |  |  |  |  csr cmd
@@ -517,6 +518,7 @@ class DecodeUnit(implicit p: Parameters) extends BoomModule
     (io.interrupt && !io.enq.uop.is_sfb, io.interrupt_cause),  // Disallow interrupts while we are handling a SFB
     (uop.bp_debug_if,                    (CSR.debugTriggerCause).U),
     (uop.bp_xcpt_if,                     (Causes.breakpoint).U),
+    (uop.step_xcpt_if,                   (Causes.instruction_step).U),
     (uop.xcpt_pf_if,                     (Causes.fetch_page_fault).U),
     (uop.xcpt_ae_if,                     (Causes.fetch_access).U),
     (id_illegal_insn,                    (Causes.illegal_instruction).U)))

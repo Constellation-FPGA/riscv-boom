@@ -102,7 +102,7 @@ class MicroOp(implicit p: Parameters) extends BoomBundle
   val is_amo           = Bool()
   val uses_ldq         = Bool()
   val uses_stq         = Bool()
-  val is_sys_pc2epc    = Bool()                      // Is a ECall or Breakpoint -- both set EPC to PC.
+  val is_sys_pc2epc    = Bool()                      // Is a ECall, Breakpoint, or ESTEP -- all set EPC to PC.
   val is_unique        = Bool()                      // only allow this instruction in the pipeline, wait for STQ to
                                                      // drain, clear fetcha fter it (tell ROB to un-ready until empty)
   val flush_on_commit  = Bool()                      // some instructions need to flush the pipeline behind them
@@ -137,6 +137,7 @@ class MicroOp(implicit p: Parameters) extends BoomBundle
   val xcpt_ma_if       = Bool()             // Misaligned fetch (jal/brjumping to misaligned addr).
   val bp_debug_if      = Bool()             // Breakpoint
   val bp_xcpt_if       = Bool()             // Breakpoint
+  val step_xcpt_if     = Bool()             // Instruction single step (Fully delegable breakpoint)
 
 
   // What prediction structure provides the prediction FROM this op
@@ -175,6 +176,3 @@ class CtrlSignals extends Bundle()
   val is_sta      = Bool()   // will invoke TLB address lookup
   val is_std      = Bool()
 }
-
-
-

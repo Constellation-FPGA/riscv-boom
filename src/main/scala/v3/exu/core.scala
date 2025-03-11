@@ -738,9 +738,10 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
   rob.io.debug_tsc := debug_tsc_reg
   rob.io.csr_stall := csr.io.csr_stall
 
-  // Minor hack: ecall and breaks need to increment the FTQ deq ptr earlier than commit, since
-  // they write their PC into the CSR the cycle before they commit.
+  // Minor hack: ecall, ebreak, and estep need to increment the FTQ deq ptr earlier than commit,
+  // since they write their PC into the CSR the cycle before they commit.
   // Since these are also unique, increment the FTQ ptr when they are dispatched
+  // TODO: Actually figure out how to do this, if I need to do this!
   when (RegNext(dis_fire.reduce(_||_) && dis_uops(PriorityEncoder(dis_fire)).is_sys_pc2epc)) {
     io.ifu.commit.valid := true.B
     io.ifu.commit.bits  := RegNext(dis_uops(PriorityEncoder(dis_valids)).ftq_idx)
@@ -1042,6 +1043,7 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
       Causes.store_page_fault.U,
       Causes.fetch_page_fault.U,
       Causes.floating_point.U,
+      Causes.instruction_step.U,
     )
 
   csr.io.tval := Mux(tval_valid,

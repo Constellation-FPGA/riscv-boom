@@ -437,9 +437,8 @@ class Rob(
          * fflags_care CSR has been set.
          * NOTE: Unlike in Rocket, we do NOT need to worry about CSR set/write
          * changing the flags and us raising an exception incorrectly, since
-         * BOOM does NOT change fflags on the CSR set/write uop.
-         * FIXME: Make use of the fp_xcpt flag coming from the CSRFile. */
-        val fflags_changed = (og_fflags ^ new_fflags).orR
+         * BOOM does NOT change fflags on the CSR set/write uop. */
+        val fflags_changed = (fp_uop.fflags_mask & (og_fflags ^ new_fflags) & new_fflags).orR
 
         // Mark the ROB row this uop is in as exceptional
         rob_exception(rob_row) := fflags_changed

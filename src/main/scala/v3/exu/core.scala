@@ -726,6 +726,12 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
   //-------------------------------------------------------------
   // Rob Allocation Logic
 
+  for (w <- 0 until coreWidth) {
+    // Every uop gets a copy of the contents of the fflags_mask CSR at dispatch
+    // time.
+    dis_uops(w).fflags_mask := csr.io.fflags_mask
+  }
+
   rob.io.enq_valids := dis_fire
   rob.io.enq_uops   := dis_uops
   rob.io.enq_partial_stall := dis_stalls.last // TODO come up with better ROB compacting scheme.

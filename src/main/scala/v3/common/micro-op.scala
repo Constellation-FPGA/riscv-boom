@@ -16,6 +16,8 @@ import chisel3.util._
 
 import org.chipsalliance.cde.config.Parameters
 
+import freechips.rocketchip.tile.FPConstants
+
 import boom.v3.exu.FUConstants
 
 /**
@@ -127,6 +129,7 @@ class MicroOp(implicit p: Parameters) extends BoomBundle
   val fp_val           = Bool()             // is a floating-point instruction (F- or D-extension)?
                                             // If it's non-ld/st it will write back exception bits to the fcsr.
   val fp_single        = Bool()             // single-precision floating point instruction (F-extension)
+  val fflags_mask      = UInt(FPConstants.FLAGS_SZ.W)
 
   // frontend exception information
   val xcpt_pf_if       = Bool()             // I-TLB page fault.

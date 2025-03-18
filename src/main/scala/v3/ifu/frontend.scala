@@ -236,6 +236,7 @@ class FetchBundle(implicit p: Parameters) extends BoomBundle
 
   val bp_debug_if_oh= Vec(fetchWidth, Bool())
   val bp_xcpt_if_oh = Vec(fetchWidth, Bool())
+  val bp_step_if_oh = Vec(fetchWidth, Bool())
 
   val end_half      = Valid(UInt(16.W))
 
@@ -740,6 +741,13 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
       f3_fetch_bundle.bp_debug_if_oh(i) := bpu.io.debug_if
       f3_fetch_bundle.bp_xcpt_if_oh (i) := bpu.io.xcpt_if
+      /* FIXME: A hack to make ESTEP behave EXACTLY like an EBREAK, but we allow
+       * additional delegation to be done from the CSR-side of things.
+       * Technically the fact this instruction is an ESTEP should be returned by
+       * the BreakPoint Unit (BPU) rather than having the front-end figure it
+       * out using some logic. */
+      f3_fetch_bundle.bp_step_if_oh (i) := bpu.io.xcpt_if &&
+        (bank_insts(w) === freechips.rocketchip.rocket.Instructions.ESTEP)
 
       redirect_found = redirect_found || f3_redirects(i)
     }

@@ -1061,9 +1061,19 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
     }
 
   // reading requires serializing the entire pipeline
-  csr.io.fcsr_flags.valid := rob.io.commit.fflags.valid
-  csr.io.fcsr_flags.bits  := rob.io.commit.fflags.bits
-  csr.io.set_fs_dirty.get := rob.io.commit.fflags.valid
+  /* If an FP instruction raises an exception, it does not tecnically commit,
+   * so we cannot rely on the commited uop's fflags to be used. If the FP
+   * uop is exceptional, then we must immediately set these flags based on what
+   * is provided in the commit-exception bundle. */
+  csr.io.fcsr_flags.valid := Mux(RegNext(rob.io.com_xcpt.valid && rob.io.com_xcpt.bits.fflags.valid),
+    RegNext(rob.io.com_xcpt.bits.fflags.valid),
+    rob.io.commit.fflags.valid)
+  csr.io.fcsr_flags.bits  := Mux(RegNext(rob.io.com_xcpt.valid && rob.io.com_xcpt.bits.fflags.valid),
+    RegNext(rob.io.com_xcpt.bits.fflags.bits),
+    rob.io.commit.fflags.bits)
+  csr.io.set_fs_dirty.get := Mux(RegNext(rob.io.com_xcpt.valid && rob.io.com_xcpt.bits.fflags.valid),
+    RegNext(rob.io.com_xcpt.bits.fflags.valid),
+    rob.io.commit.fflags.valid)
 
   exe_units.withFilter(_.hasFcsr).map(_.io.fcsr_rm := csr.io.fcsr_rm)
   io.fcsr_rm := csr.io.fcsr_rm

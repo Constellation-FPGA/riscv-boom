@@ -145,6 +145,7 @@ class CommitExceptionSignals(implicit p: Parameters) extends BoomBundle
   val pc_lob     = UInt(log2Ceil(icBlockBytes).W)
   val cause      = UInt(xLen.W)
   val badvaddr   = UInt(xLen.W)
+  val fflags     = Valid(UInt(freechips.rocketchip.tile.FPConstants.FLAGS_SZ.W))
 // The ROB needs to tell the FTQ if there's a pipeline flush (and what type)
 // so the FTQ can drive the frontend with the correct redirected PC.
   val flush_typ  = FlushTypes()
@@ -621,6 +622,8 @@ class Rob(
   io.com_xcpt.valid := exception_thrown && !is_mini_exception
   io.com_xcpt.bits := DontCare
   io.com_xcpt.bits.cause := r_xcpt_uop.exc_cause
+  io.com_xcpt.bits.fflags.valid := r_xcpt_fp_xcpt
+  io.com_xcpt.bits.fflags.bits := r_xcpt_fp_fflags
 
   io.com_xcpt.bits.badvaddr := Sext(r_xcpt_badvaddr, xLen)
   val insn_sys_pc2epc =

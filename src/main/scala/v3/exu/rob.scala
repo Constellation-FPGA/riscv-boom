@@ -258,6 +258,8 @@ class Rob(
   val r_xcpt_val       = RegInit(false.B)
   val r_xcpt_uop       = Reg(new MicroOp())
   val r_xcpt_badvaddr  = Reg(UInt(coreMaxAddrBits.W))
+  val r_xcpt_fp_xcpt   = RegInit(false.B)
+  val r_xcpt_fp_fflags = Reg(UInt(freechips.rocketchip.tile.FPConstants.FLAGS_SZ.W))
   io.flush_frontend := r_xcpt_val
 
   /* A wire to build a proper exception when FP exceptions occur. This mirrors
@@ -724,6 +726,15 @@ class Rob(
         next_xcpt_uop           := new_xcpt.uop
         next_xcpt_uop.exc_cause := new_xcpt.cause
         r_xcpt_badvaddr         := new_xcpt.badvaddr
+        /* While we register the exception, we ALSO mark whether or not this was
+         * an FP exception. This was an FP exception if any of the fflags changed
+         * that we should care about.
+         * NOTE: All ROB entries start with their uop's fflags being zero-d out,
+         * so we don't need to worry about.
+         * Also, CSR instructions do not end up flowing this this path, so we do
+         * not need to worry about anything. */
+        r_xcpt_fp_xcpt          := (new_xcpt.uop.fflags_mask & new_xcpt.fflags).orR
+        r_xcpt_fp_fflags        := new_xcpt.fflags
       }
     } .elsewhen (!r_xcpt_val && enq_xcpts.reduce(_|_)) {
       val idx = enq_xcpts.indexWhere{i: Bool => i}
@@ -732,7 +743,9 @@ class Rob(
       r_xcpt_val      := true.B
       next_xcpt_uop   := io.enq_uops(idx)
       r_xcpt_badvaddr := AlignPCToBoundary(io.xcpt_fetch_pc, icBlockBytes) | io.enq_uops(idx).pc_lob
-
+      // Dispatch exceptions inherently cannot be FP exceptions
+      r_xcpt_fp_xcpt := false.B
+      r_xcpt_fp_fflags := 0.U
     }
   }
 
@@ -740,6 +753,8 @@ class Rob(
   r_xcpt_uop.br_mask := GetNewBrMask(io.brupdate, next_xcpt_uop)
   when (io.flush.valid || IsKilledByBranch(io.brupdate, next_xcpt_uop)) {
     r_xcpt_val := false.B
+    r_xcpt_fp_xcpt := false.B
+    r_xcpt_fp_fflags := 0.U
   }
 
   assert (!(exception_thrown && !r_xcpt_val),

@@ -186,6 +186,7 @@ class Exception(implicit p: Parameters) extends BoomBundle
   val uop = new MicroOp()
   val cause = Bits(log2Ceil(freechips.rocketchip.rocket.Causes.all.max+2).W)
   val badvaddr = UInt(coreMaxAddrBits.W)
+  val fflags = Bits(freechips.rocketchip.tile.FPConstants.FLAGS_SZ.W)
 }
 
 /**
@@ -452,6 +453,7 @@ class Rob(
          * vaddr.
          * XXX: We use this as a hacky workaround just to get things working. */
         fp_xcpt.bits.badvaddr := fp_uop.debug_pc
+        fp_xcpt.bits.fflags := new_fflags
       }
     }
 

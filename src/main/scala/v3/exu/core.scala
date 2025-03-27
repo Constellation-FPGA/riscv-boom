@@ -1015,6 +1015,7 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
   rob.io.csr_replay.bits.uop := csr_exe_unit.io.iresp.bits.uop
   rob.io.csr_replay.bits.cause := MINI_EXCEPTION_CSR_REPLAY
   rob.io.csr_replay.bits.badvaddr := DontCare
+  rob.io.csr_replay.bits.fflags := DontCare
 
   // Extra I/O
   // Delay retire/exception 1 cycle

@@ -457,6 +457,11 @@ class Rob(
          * XXX: We use this as a hacky workaround just to get things working. */
         fp_xcpt.bits.badvaddr := fp_uop.debug_pc
         fp_xcpt.bits.fflags := new_fflags
+
+        assert(implies(fp_xcpt.valid, rob_uop(rob_row).fp_val),
+          "FP Exceptions can only be raised by FP instructions")
+        assert(implies(fp_xcpt.valid, fflags_changed && rob_uop(rob_row).fp_val),
+          "ROB rows marked with FP Exceptions can only be raised by FP instructions")
       }
     }
 

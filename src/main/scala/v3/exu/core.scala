@@ -1065,6 +1065,13 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
    * so we cannot rely on the commited uop's fflags to be used. If the FP
    * uop is exceptional, then we must immediately set these flags based on what
    * is provided in the commit-exception bundle. */
+  val fp_com_xcpt = rob.io.com_xcpt.valid && rob.io.com_xcpt.bits.fflags.valid
+  val com_xcpt = rob.io.com_xcpt.bits
+  assert(implies(fp_com_xcpt, com_xcpt.fflags.bits =/= 0.U),
+    "FP commit exception means fflags are non-0")
+  assert(implies(fp_com_xcpt, com_xcpt.cause === freechips.rocketchip.rocket.Causes.floating_point.U),
+    "FP commit exception must send FP cause to CSR")
+
   csr.io.fcsr_flags.valid := Mux(RegNext(rob.io.com_xcpt.valid && rob.io.com_xcpt.bits.fflags.valid),
     RegNext(rob.io.com_xcpt.bits.fflags.valid),
     rob.io.commit.fflags.valid)

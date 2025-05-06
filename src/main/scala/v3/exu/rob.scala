@@ -702,6 +702,7 @@ class Rob(
     enq_xcpts(i) := io.enq_valids(i) && io.enq_uops(i).exception
   }
 
+  /* Now we need to figure out what the NEW OLDEST exception is and register it. */
   when (!(io.flush.valid || exception_thrown) && rob_state =/= s_rollback) {
 
     val new_xcpt_valid = io.lxcpt.valid || io.csr_replay.valid || fp_xcpt.valid

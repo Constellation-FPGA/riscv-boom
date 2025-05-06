@@ -751,7 +751,9 @@ class Rob(
       r_xcpt_val      := true.B
       next_xcpt_uop   := io.enq_uops(idx)
       r_xcpt_badvaddr := AlignPCToBoundary(io.xcpt_fetch_pc, icBlockBytes) | io.enq_uops(idx).pc_lob
-      // Dispatch exceptions inherently cannot be FP exceptions
+      /* Dispatch exceptions inherently cannot be FP exceptions, because
+       * dispatch exceptions are thrown by the front-end (misaligned inst.
+       * address, or illegal instruction). */
       r_xcpt_fp_xcpt := false.B
       r_xcpt_fp_fflags := 0.U
     }

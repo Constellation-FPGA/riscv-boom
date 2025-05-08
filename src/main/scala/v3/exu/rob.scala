@@ -731,7 +731,7 @@ class Rob(
 
     when (new_xcpt_valid) {
       when (!r_xcpt_val || IsOlder(new_xcpt.uop.rob_idx, r_xcpt_uop.rob_idx, rob_head_idx)) {
-        r_xcpt_val              := !RegNext(r_xcpt_val)
+        r_xcpt_val              := !RegNext(r_xcpt_val && r_xcpt_fp_xcpt)
         next_xcpt_uop           := new_xcpt.uop
         next_xcpt_uop.exc_cause := new_xcpt.cause
         r_xcpt_badvaddr         := new_xcpt.badvaddr

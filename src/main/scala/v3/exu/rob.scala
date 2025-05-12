@@ -500,9 +500,21 @@ class Rob(
     assert (!(io.commit.valids.reduce(_||_) && io.commit.rbk_valids.reduce(_||_)),
       "com_valids and rbk_valids are mutually exclusive")
 
+    /* If we are rolling back, then we must invalidate the entries that the
+     * commit index (which should be pointing to the ROB's tail) is pointing at
+     * in the ROB (effectively rolling the entry back).
+     * Further, we must ALSO invalidate the oldest registered exception if it
+     * matches the ROB entry we just rolled-back. */
     when (rbk_row) {
       rob_val(com_idx)       := false.B
       rob_exception(com_idx) := false.B
+
+      when (rob_exception(com_idx) &&
+            (rob_uop(com_idx).rob_idx === r_xcpt_uop.rob_idx)) {
+        r_xcpt_val := false.B
+        r_xcpt_fp_xcpt := false.B
+        r_xcpt_fp_fflags := 0.U
+      }
     }
 
     if (enableCommitMapTable) {
@@ -731,7 +743,7 @@ class Rob(
 
     when (new_xcpt_valid) {
       when (!r_xcpt_val || IsOlder(new_xcpt.uop.rob_idx, r_xcpt_uop.rob_idx, rob_head_idx)) {
-        r_xcpt_val              := !RegNext(r_xcpt_val && r_xcpt_fp_xcpt)
+        r_xcpt_val              := true.B
         next_xcpt_uop           := new_xcpt.uop
         next_xcpt_uop.exc_cause := new_xcpt.cause
         r_xcpt_badvaddr         := new_xcpt.badvaddr

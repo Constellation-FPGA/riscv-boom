@@ -742,7 +742,8 @@ class Rob(
                      Mux(csr_replay_oldest, io.csr_replay.bits, fp_xcpt.bits))
 
     when (new_xcpt_valid) {
-      when (!r_xcpt_val || IsOlder(new_xcpt.uop.rob_idx, r_xcpt_uop.rob_idx, rob_head_idx)) {
+      when ((!r_xcpt_val && !RegNext(exception_thrown)) ||
+            IsOlder(new_xcpt.uop.rob_idx, r_xcpt_uop.rob_idx, rob_head_idx)) {
         r_xcpt_val              := true.B
         next_xcpt_uop           := new_xcpt.uop
         next_xcpt_uop.exc_cause := new_xcpt.cause

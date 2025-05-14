@@ -458,9 +458,18 @@ class Rob(
         fp_xcpt.bits.badvaddr := fp_uop.debug_pc
         fp_xcpt.bits.fflags := new_fflags
 
+        when (!implies(fp_xcpt.valid, rob_uop(rob_row).fp_val)) {
+          printf("fp_xcpt.valid=0x%x\trob_uop(rob_row).fp_val=0x%x\n",
+                 fp_xcpt.valid, rob_uop(rob_row).fp_val)
+        }
         assert(implies(fp_xcpt.valid, rob_uop(rob_row).fp_val),
           "FP Exceptions can only be raised by FP instructions")
-        assert(implies(fp_xcpt.valid, fflags_changed && rob_uop(rob_row).fp_val),
+
+        when (!implies(fp_xcpt.valid, rob_uop(rob_row).fp_val && fflags_changed)) {
+          printf("fp_xcpt.valid=0x%x\trob_uop(rob_row).fp_val=0x%x\tfflags_changed=0x%x\n",
+                 fp_xcpt.valid, rob_uop(rob_row).fp_val, fflags_changed)
+        }
+        assert(implies(fp_xcpt.valid, rob_uop(rob_row).fp_val && fflags_changed),
           "ROB rows marked with FP Exceptions can only be raised by FP instructions")
       }
     }

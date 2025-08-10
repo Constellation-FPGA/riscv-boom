@@ -49,6 +49,7 @@ class FFlagsResp(implicit p: Parameters) extends BoomBundle
 {
   val uop = new MicroOp()
   val flags = Bits(tile.FPConstants.FLAGS_SZ.W)
+  val fp_xcpt = Bool()
 }
 
 
@@ -156,6 +157,7 @@ abstract class ExecutionUnit(
     io.fresp.valid := false.B
     io.fresp.bits := DontCare
     io.fresp.bits.fflags.valid := false.B
+    io.fresp.bits.fflags.bits.fp_xcpt := false.B
     io.fresp.bits.predicated := false.B
     assert(io.fresp.ready)
   }
@@ -163,6 +165,7 @@ abstract class ExecutionUnit(
     io.ll_fresp.valid := false.B
     io.ll_fresp.bits := DontCare
     io.ll_fresp.bits.fflags.valid := false.B
+    io.ll_fresp.bits.fflags.bits.fp_xcpt := false.B
     io.ll_fresp.bits.predicated := false.B
   }
 

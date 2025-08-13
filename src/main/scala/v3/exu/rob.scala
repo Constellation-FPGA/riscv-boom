@@ -431,17 +431,23 @@ class Rob(
       val fp_uop = io.fflags(i).bits.uop
       when (io.fflags(i).valid && MatchBank(GetBankIdx(fp_uop.rob_idx))) {
         val rob_row = GetRowIdx(fp_uop.rob_idx)
-        val fp_exception = io.fflags(i).bits.fp_xcpt
+        val og_fflags = rob_fflags(w)(GetRowIdx(fp_uop.rob_idx))
         val new_fflags = io.fflags(i).bits.flags
 
-        // This uop is no longer unsafe to speculate past?
-        // It is technically correct to treat FP instructions as ALWAYS unsafe
-        // (non-speculable), rather than lowering the unsafe flag after some
-        // time, like other entries have.
+        /* Only mark uop as exception in ROB when fflags change betwen what the
+         * uop had before and the new set of flags. If nothing changed, then
+         * there was no FP event, so we cannot raise an exception. If any single
+         * bit DID change, then we must flag this as an exception, ONLY when the
+         * fflags_care CSR has been set.
+         * NOTE: Unlike in Rocket, we do NOT need to worry about CSR set/write
+         * changing the flags and us raising an exception incorrectly, since
+         * BOOM does NOT change fflags on the CSR set/write uop. */
+        val fflags_changed = (fp_uop.fflags_mask & (og_fflags ^ new_fflags) & new_fflags).orR
+
         // Mark the ROB row this uop is in as exceptional
-        rob_exception(rob_row) := fp_exception
+        rob_exception(rob_row) := fflags_changed
         // Build an exception that we can use for passing out of the ROB
-        fp_xcpt.valid := io.fflags(i).bits.fp_xcpt
+        fp_xcpt.valid := fflags_changed
         fp_xcpt.bits.uop := fp_uop
         fp_xcpt.bits.cause := freechips.rocketchip.rocket.Causes.floating_point.U
         /* FIXME: We should NOT use debug_pc here. Recover PC using ftq[ftq_idx]
@@ -459,11 +465,11 @@ class Rob(
         assert(implies(fp_xcpt.valid, rob_uop(rob_row).fp_val),
           "FP Exceptions can only be raised by FP instructions")
 
-        when (!implies(fp_xcpt.valid, rob_uop(rob_row).fp_val && fp_exception)) {
-          printf("fp_xcpt.valid=0x%x\trob_uop(rob_row).fp_val=0x%x\tfp_exception=0x%x\n",
-                 fp_xcpt.valid, rob_uop(rob_row).fp_val, fp_exception)
+        when (!implies(fp_xcpt.valid, rob_uop(rob_row).fp_val && fflags_changed)) {
+          printf("fp_xcpt.valid=0x%x\trob_uop(rob_row).fp_val=0x%x\tfflags_changed=0x%x\n",
+                 fp_xcpt.valid, rob_uop(rob_row).fp_val, fflags_changed)
         }
-        assert(implies(fp_xcpt.valid, rob_uop(rob_row).fp_val && fp_exception),
+        assert(implies(fp_xcpt.valid, rob_uop(rob_row).fp_val && fflags_changed),
           "ROB rows marked with FP Exceptions can only be raised by FP instructions")
       }
     }

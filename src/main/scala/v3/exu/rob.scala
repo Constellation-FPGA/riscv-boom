@@ -427,7 +427,8 @@ class Rob(
      * ROB. In this case, it happens above, but we do not have top-down
      * execution, so exact location is not important. Just the presence of
      * accrual is enough. */
-    for (i <- 0 until numFpuPorts) {
+    val i = 1
+    // for (i <- 0 until numFpuPorts) {
       val fp_uop = io.fflags(i).bits.uop
       when (io.fflags(i).valid && MatchBank(GetBankIdx(fp_uop.rob_idx))) {
         val rob_row = GetRowIdx(fp_uop.rob_idx)
@@ -472,7 +473,7 @@ class Rob(
         assert(implies(fp_xcpt.valid, rob_uop(rob_row).fp_val && fflags_changed),
           "ROB rows marked with FP Exceptions can only be raised by FP instructions")
       }
-    }
+    // }
 
     can_throw_exception(w) := rob_val(rob_head) && rob_exception(rob_head)
 

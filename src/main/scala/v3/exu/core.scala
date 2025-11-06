@@ -730,6 +730,9 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
     // Every uop gets a copy of the contents of the fflags_mask CSR at dispatch
     // time.
     dis_uops(w).fflags_mask := csr.io.fflags_mask
+    // Every uop gets a copy of the value exceptions mask CSR at dispatch time.
+    dis_uops(w).value_xcpt_mask := csr.io.value_xcpt_mask
+    printf("VAL XCPT MASK: 0x%x\n", csr.io.value_xcpt_mask)
   }
 
   rob.io.enq_valids := dis_fire

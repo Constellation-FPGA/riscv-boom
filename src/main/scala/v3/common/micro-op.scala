@@ -131,6 +131,9 @@ class MicroOp(implicit p: Parameters) extends BoomBundle
   val fp_single        = Bool()             // single-precision floating point instruction (F-extension)
   val fflags_mask      = UInt(FPConstants.FLAGS_SZ.W)
 
+  /* Value exceptions */
+  val value_xcpt_mask  = UInt(xLen.W)
+
   // frontend exception information
   val xcpt_pf_if       = Bool()             // I-TLB page fault.
   val xcpt_ae_if       = Bool()             // I$ access exception.

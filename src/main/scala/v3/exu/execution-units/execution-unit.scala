@@ -352,7 +352,7 @@ class ALUExeUnit(
     queue.io.enq.bits.data   := ifpu.io.resp.bits.data
     queue.io.enq.bits.predicated := ifpu.io.resp.bits.predicated
     queue.io.enq.bits.fflags := ifpu.io.resp.bits.fflags
-    queue.io.enq.bits.value_xcpt := DontCare
+    queue.io.enq.bits.value_xcpt := ifpu.io.resp.bits.value_xcpt
     queue.io.brupdate := io.brupdate
     queue.io.flush := io.req.bits.kill
 
@@ -415,6 +415,8 @@ class ALUExeUnit(
       (f.io.resp.valid, f.io.resp.bits.data)).toSeq)
     io.iresp.bits.predicated := PriorityMux(iresp_fu_units.map(f =>
       (f.io.resp.valid, f.io.resp.bits.predicated)).toSeq)
+    io.iresp.bits.value_xcpt  := PriorityMux(iresp_fu_units.map(f =>
+      (f.io.resp.valid, f.io.resp.bits.value_xcpt)).toSeq)
 
     // pulled out for critical path reasons
     // TODO: Does this make sense as part of the iresp bundle?
@@ -545,7 +547,7 @@ class FPUExeUnit(
     queue.io.enq.bits.data   := fpu.io.resp.bits.data
     queue.io.enq.bits.predicated := fpu.io.resp.bits.predicated
     queue.io.enq.bits.fflags := fpu.io.resp.bits.fflags
-    queue.io.enq.bits.value_xcpt := DontCare
+    queue.io.enq.bits.value_xcpt := fpu.io.resp.bits.value_xcpt
     queue.io.brupdate          := io.brupdate
     queue.io.flush           := io.req.bits.kill
 

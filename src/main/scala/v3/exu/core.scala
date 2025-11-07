@@ -877,6 +877,9 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
   pred_wakeup.bits.fflags := DontCare
   pred_wakeup.bits.data := DontCare
   pred_wakeup.bits.predicated := DontCare
+  // Computing the condition for predicated uops cannot cause value exceptions,
+  // since we do not allow that to be the case.
+  pred_wakeup.bits.value_xcpt := DontCare
 
   // Perform load-hit speculative wakeup through a special port (performs a poison wake-up).
   issue_units map { iu =>

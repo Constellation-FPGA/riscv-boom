@@ -366,6 +366,7 @@ class Rob(
         rob_bsy(row_idx)      := false.B
         rob_unsafe(row_idx)   := false.B
         rob_predicated(row_idx)  := wb_resp.bits.predicated
+        rob_exception(row_idx) := wb_resp.bits.value_xcpt
       }
       // TODO check that fflags aren't overwritten
       // TODO check that the wb is to a valid ROB entry, give it a time stamp

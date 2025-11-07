@@ -40,6 +40,7 @@ class ExeUnitResp(val dataWidth: Int)(implicit p: Parameters) extends BoomBundle
   val data = Bits(dataWidth.W)
   val predicated = Bool() // Was this predicated off?
   val fflags = new ValidIO(new FFlagsResp) // write fflags to ROB // TODO: Do this better
+  val value_xcpt = Bool() // Was an exceptional value produced?
 }
 
 /**
@@ -351,6 +352,7 @@ class ALUExeUnit(
     queue.io.enq.bits.data   := ifpu.io.resp.bits.data
     queue.io.enq.bits.predicated := ifpu.io.resp.bits.predicated
     queue.io.enq.bits.fflags := ifpu.io.resp.bits.fflags
+    queue.io.enq.bits.value_xcpt := DontCare
     queue.io.brupdate := io.brupdate
     queue.io.flush := io.req.bits.kill
 
@@ -543,6 +545,7 @@ class FPUExeUnit(
     queue.io.enq.bits.data   := fpu.io.resp.bits.data
     queue.io.enq.bits.predicated := fpu.io.resp.bits.predicated
     queue.io.enq.bits.fflags := fpu.io.resp.bits.fflags
+    queue.io.enq.bits.value_xcpt := DontCare
     queue.io.brupdate          := io.brupdate
     queue.io.flush           := io.req.bits.kill
 
@@ -555,6 +558,7 @@ class FPUExeUnit(
     fp_sdq.io.enq.bits.data  := ieee(io.req.bits.rs2_data)
     fp_sdq.io.enq.bits.predicated := false.B
     fp_sdq.io.enq.bits.fflags := DontCare
+    fp_sdq.io.enq.bits.value_xcpt := DontCare
     fp_sdq.io.brupdate         := io.brupdate
     fp_sdq.io.flush          := io.req.bits.kill
 

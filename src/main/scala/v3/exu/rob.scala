@@ -744,12 +744,11 @@ class Rob(
     val csr_replay_older_than_fp_xcpt = !fp_xcpt.valid ||
           (IsOlder(io.csr_replay.bits.uop.rob_idx, fp_xcpt.bits.uop.rob_idx, rob_head_idx) && io.csr_replay.valid)
 
-    val lxcpt_oldest      =  lxcpt_older_than_csr_replay &&  lxcpt_older_than_fp_xcpt
-    val csr_replay_oldest = !lxcpt_older_than_csr_replay &&  csr_replay_older_than_fp_xcpt
-    val fp_xcpt_oldest    = !lxcpt_older_than_fp_xcpt    && !csr_replay_older_than_fp_xcpt
-
-    val new_xcpt = Mux(lxcpt_oldest, io.lxcpt.bits,
-                     Mux(csr_replay_oldest, io.csr_replay.bits, fp_xcpt.bits))
+    val new_xcpt = PriorityMux(Seq(
+      (lxcpt_older_than_csr_replay && lxcpt_older_than_fp_xcpt, io.lxcpt.bits),
+      (!lxcpt_older_than_csr_replay && csr_replay_older_than_fp_xcpt, io.csr_replay.bits),
+      (!lxcpt_older_than_fp_xcpt && !csr_replay_older_than_fp_xcpt, fp_xcpt.bits),
+    ))
 
     when (new_xcpt_valid) {
       when ((!r_xcpt_val && !RegNext(exception_thrown)) ||

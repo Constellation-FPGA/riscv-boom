@@ -40,7 +40,7 @@ class ExeUnitResp(val dataWidth: Int)(implicit p: Parameters) extends BoomBundle
   val data = Bits(dataWidth.W)
   val predicated = Bool() // Was this predicated off?
   val fflags = new ValidIO(new FFlagsResp) // write fflags to ROB // TODO: Do this better
-  val value_xcpt = Bool() // Was an exceptional value produced?
+  val value_xcpt = Valid(new Exception) // Was an exceptional value produced?
 }
 
 /**

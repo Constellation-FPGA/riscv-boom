@@ -110,7 +110,7 @@ class FuncUnitResp(val dataWidth: Int)(implicit p: Parameters) extends BoomBundl
   val addr = UInt((vaddrBits+1).W) // only for maddr -> LSU
   val mxcpt = new ValidIO(UInt((freechips.rocketchip.rocket.Causes.all.max+2).W)) //only for maddr->LSU
   val sfence = Valid(new freechips.rocketchip.rocket.SFenceReq) // only for mcalc
-  val value_xcpt = Bool()
+  val value_xcpt = Valid(new Exception) // Was an exceptional value produced?
 }
 
 /**
@@ -449,19 +449,25 @@ class ALUUnit(isJmpUnit: Boolean = false, numStages: Int = 1, dataWidth: Int)(im
   val r_pred = Reg(Vec(numStages, Bool()))
   // I really hate this. It should be combined with r_data, but making that
   // work will probably be hell.
-  val r_val_xcpt = Reg(Vec(numStages, Bool()))
+  val r_val_xcpt = Reg(Vec(numStages, Valid(new Exception)))
+
   val alu_out = Mux(io.req.bits.uop.is_sfb_shadow && io.req.bits.pred_data,
     Mux(io.req.bits.uop.ldst_is_rs1, io.req.bits.rs1_data, io.req.bits.rs2_data),
     Mux(io.req.bits.uop.uopc === uopMOV, io.req.bits.rs2_data, alu.io.out))
   r_val (0) := io.req.valid
   r_data(0) := Mux(io.req.bits.uop.is_sfb_br, pc_sel === PC_BRJMP, alu_out)
   r_pred(0) := io.req.bits.uop.is_sfb_shadow && io.req.bits.pred_data
-  r_val_xcpt(0) := Mux(io.req.bits.uop.is_sfb_br,
+  r_val_xcpt(0).valid := Mux(io.req.bits.uop.is_sfb_br,
     // SFBs should never produce a value exception, since they are the
     // resolution of the short branch's CONDITION. A value exception should
     // have been caught by producing the value USED in the condition.
     false.B,
     (alu_out & uop.value_xcpt_mask).orR)
+  r_val_xcpt(0).bits.uop := uop
+  r_val_xcpt(0).bits.cause := freechips.rocketchip.rocket.Causes.value_exception.U
+  r_val_xcpt(0).bits.badvaddr := uop.debug_pc // FIXME: Don't use uop.debug_pc!
+  r_val_xcpt(0).bits.fflags := DontCare
+
   for (i <- 1 until numStages) {
     r_val(i)  := r_val(i-1)
     r_data(i) := r_data(i-1)

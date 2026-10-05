@@ -306,4 +306,24 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
 
   val corePAddrBits = paddrBits
   val corePgIdxBits = pgIdxBits
+
+  //************************************
+  // Alaska/Yukon Handle parameters
+
+  /**
+    * The bit-pattern that handles must have.
+    * The top bit must be set and the 2nd-most-top bit must be clear.
+    */
+  val handlePattern = BitPat("b10??????????????????????????????????????????????????????????????")
+
+  /**
+    * Return true.B if ADDR is a handle, otherwise return false.B.
+    *
+    * @param addr Virtual address of a handle as a 64-bit number, before handle
+    * translation.
+    */
+  def is_handle(addr: UInt): Bool = {
+    require(addr.getWidth == 64, s"Address/number to be used as handle must be 64 bits wide")
+    return addr === handlePattern
+  }
 }

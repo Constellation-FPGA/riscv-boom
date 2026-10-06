@@ -172,6 +172,7 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   // coreWidth is width of decode, width of integer rename, width of ROB, and commit width
   val coreWidth = decodeWidth
 
+  require(xLen == 64, "xLen MUST be 64 bits for Yukon/Svalbard")
   require (isPow2(fetchWidth))
   require (coreWidth <= fetchWidth)
 

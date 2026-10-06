@@ -167,7 +167,7 @@ class LSUIO(implicit p: Parameters, edge: TLEdgeOut) extends BoomBundle()(p)
 class LDQEntry(implicit p: Parameters) extends BoomBundle()(p)
     with HasBoomUOP
 {
-  val addr                = Valid(UInt(coreMaxAddrBits.W))
+  val addr                = Valid(UInt(xLen.W))
   val addr_is_virtual     = Bool() // Virtual address, we got a TLB miss
   val addr_is_uncacheable = Bool() // Uncacheable, wait until head of ROB to execute
 
@@ -188,7 +188,7 @@ class LDQEntry(implicit p: Parameters) extends BoomBundle()(p)
 class STQEntry(implicit p: Parameters) extends BoomBundle()(p)
    with HasBoomUOP
 {
-  val addr                = Valid(UInt(coreMaxAddrBits.W))
+  val addr                = Valid(UInt(xLen.W))
   val addr_is_virtual     = Bool() // Virtual address, we got a TLB miss
   val data                = Valid(UInt(xLen.W))
 

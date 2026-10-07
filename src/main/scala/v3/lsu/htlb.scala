@@ -72,6 +72,14 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val req = Flipped(Vec(memWidth, Decoupled(new HTLBReq)))
     val resp = Vec(memWidth, new HTLBResp)
   })
+
+  /* Ensure that when we receive a valid request, the payload (handle address)
+   * is ACTUALLY a handle. */
+  for (w <- 0 until memWidth) {
+    val req = io.req(w)
+    assert(implies(req.fire, is_handle(req.bits.haddr)),
+      "[htlb] HTLB translation requests must have addresses be handles")
+  }
 }
 
 /** Handle Translation Lookaside Buffer that always produces handle faults.

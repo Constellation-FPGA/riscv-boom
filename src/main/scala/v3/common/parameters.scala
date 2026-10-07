@@ -102,7 +102,16 @@ case class BoomCoreParams(
   /* debug stuff */
   enableCommitLogPrintf: Boolean = false,
   enableBranchPrintf: Boolean = false,
-  enableMemtracePrintf: Boolean = false
+  enableMemtracePrintf: Boolean = false,
+
+  /* Yukon stuff */
+  usingHandles: Boolean = false,
+  nL1HTLBWays: Int = 4,
+  nL1HTLBSets: Int = 4,
+  /** Trace state changes to handles on a per-handle basis. */
+  enableHandleTracing: Boolean = false,
+  /** Trace state changes to handles as the dTLB responds. */
+  enableStateTracing: Boolean = false,
 
 // DOC include end: BOOM Parameters
 ) extends freechips.rocketchip.tile.CoreParams
@@ -172,7 +181,6 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   // coreWidth is width of decode, width of integer rename, width of ROB, and commit width
   val coreWidth = decodeWidth
 
-  require(xLen == 64, "xLen MUST be 64 bits for Yukon/Svalbard")
   require (isPow2(fetchWidth))
   require (coreWidth <= fetchWidth)
 
@@ -309,12 +317,31 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
 
   //************************************
   // Alaska/Yukon Handle parameters
+  require(implies(boomParams.usingHandles, xLen == 64),
+    "Yukon/Svalbard requires that xLen MUST be 64 bits")
+
+  require(implies(boomParams.enableHandleTracing, boomParams.usingHandles),
+    "Enabling handle tracing requires that handles are enabled")
+  require(implies(boomParams.enableStateTracing, boomParams.usingHandles),
+    "Enabling handle STATE tracing requires that handles are enabled")
 
   /**
     * The bit-pattern that handles must have.
     * The top bit must be set and the 2nd-most-top bit must be clear.
     */
   val handlePattern = BitPat("b10??????????????????????????????????????????????????????????????")
+
+  /** Lower 32 bits of a 64-bit number are the offset into an object for an
+   * operation. */
+  val handleOffsetBits: Int = 32
+
+  /** The number of bits in a handle ID.
+   *
+   * -2 for the top 2 bits being used for 0b10 to distinguish pages from handles
+   * and then -handleOffsetBits to account for offsets.
+   * On 64-bit systems (which is a minimum requirement), this means handle IDs
+   * are 30-bits.*/
+  val handleBits: Int = xLen - 2 - handleOffsetBits
 
   /**
     * Return true.B if ADDR is a handle, otherwise return false.B.
@@ -326,4 +353,10 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
     require(addr.getWidth == 64, s"Address/number to be used as handle must be 64 bits wide")
     return addr === handlePattern
   }
+
+  /* The Handle Table Walker (HTW) is a 2-level table.
+   * The zeroth level is indexed by the top 12 bits of a handle ID and the first
+   * level is indexed by the remaining bits (18 bits in this case). */
+  val htwL0Bits = 12
+  val htwL1Bits = handleBits - htwL0Bits
 }

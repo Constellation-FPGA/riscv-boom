@@ -254,8 +254,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   val htlb = Module(new FaultingHTLB(
     HTLBConfig(
-      nSets = 0,
-      nWays = 0,
+      nSets = boomParams.nL1HTLBSets,
+      nWays = boomParams.nL1HTLBWays,
     )
   ))
 

@@ -612,6 +612,17 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                     Mux(will_fire_hella_incoming(w)  , hella_req.addr,
                                                        0.U))))))
 
+  /* Svalbard production of handle faults.
+   * Only fresh requests from the AGU can carry a handle. Retries, wakeups,
+   * and store commits read addresses already sitting in the LDQ/STD and hella/sfence
+   * requests never carry one.
+   *
+   * CURRENTLY, EVERY HANDLE ALWAYS CAUSES A PAGE FAULT!
+   * When HW translation is implemented and compatible, we must change this. */
+  val exe_is_handle = widthMap(w =>
+    (will_fire_load_incoming(w) || will_fire_sta_incoming(w) || will_fire_stad_incoming(w)) &&
+    is_handle(exe_req(w).bits.addr))
+
   val exe_sfence = WireInit((0.U).asTypeOf(Valid(new rocket.SFenceReq)))
   for (w <- 0 until memWidth) {
     when (will_fire_sfence(w)) {
@@ -645,7 +656,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                    Mux(will_fire_hella_incoming(w)  , io.hellacache.s1_kill,
                                                       false.B))
   for (w <- 0 until memWidth) {
-    dtlb.io.req(w).valid            := exe_tlb_valid(w)
+    /* Alaska's handles are NOT virtual addresses. They cannot be dispatched to
+     * the TLB.
+     * If one slips through somehow, the 64 bits of the handle will be truncated
+     * down to a width of vaddrBitsExtended, which could hit a real mapping or
+     * start a page walk. No matter what, that's a bad time. */
+    dtlb.io.req(w).valid            := exe_tlb_valid(w) && !exe_is_handle(w)
     dtlb.io.req(w).bits.vaddr       := exe_tlb_vaddr(w)
     dtlb.io.req(w).bits.size        := exe_size(w)
     dtlb.io.req(w).bits.cmd         := exe_cmd(w)
@@ -664,19 +680,35 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val ae_ld = widthMap(w => dtlb.io.req(w).valid && dtlb.io.resp(w).ae.ld && exe_tlb_uop(w).uses_ldq)
   val ae_st = widthMap(w => dtlb.io.req(w).valid && dtlb.io.resp(w).ae.st && exe_tlb_uop(w).uses_stq)
 
+  /* Handle Faults
+   *
+   * Unlike page faults, handle faults do not distinguish between load/store
+   * faults. We instead encode that information into what we put in the UTVAL
+   * CSR. In that CSR, when the cause is "handle fault", we (as hardware
+   * designers) can reuse the top two bits that help distinguish a handle from a
+   * virtual address. */
+  /* NOTE: DTLB requests are suppressed for handles, so the pf_* and ae_* variants never fire
+   * for a handle. */
+  val handle_fault = exe_is_handle;
+  // TODO: Add an assertion for the handle fault & page fault disjoint
+  // Essentially, pf_ld & ha_ld and pf_st & ha_st are always disjoint.
+  // TODO: Split handle_fault into ha_ld and ha_st so that we an do permissions
+  // checks in the long run.
+
   // TODO check for xcpt_if and verify that never happens on non-speculative instructions.
   val mem_xcpt_valids = RegNext(widthMap(w =>
-                     (pf_ld(w) || pf_st(w) || ae_ld(w) || ae_st(w) || ma_ld(w) || ma_st(w)) &&
+                     (pf_ld(w) || pf_st(w) || handle_fault(w) || ae_ld(w) || ae_st(w) || ma_ld(w) || ma_st(w)) &&
                      !io.core.exception &&
                      !IsKilledByBranch(io.core.brupdate, exe_tlb_uop(w))))
   val mem_xcpt_uops   = RegNext(widthMap(w => UpdateBrMask(io.core.brupdate, exe_tlb_uop(w))))
   val mem_xcpt_causes = RegNext(widthMap(w =>
     Mux(ma_ld(w), rocket.Causes.misaligned_load.U,
     Mux(ma_st(w), rocket.Causes.misaligned_store.U,
+    Mux(handle_fault(w), rocket.Causes.handle_fault.U,
     Mux(pf_ld(w), rocket.Causes.load_page_fault.U,
     Mux(pf_st(w), rocket.Causes.store_page_fault.U,
     Mux(ae_ld(w), rocket.Causes.load_access.U,
-                  rocket.Causes.store_access.U)))))))
+                  rocket.Causes.store_access.U))))))))
   val mem_xcpt_vaddrs = RegNext(exe_tlb_vaddr)
 
   for (w <- 0 until memWidth) {
@@ -765,7 +797,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     io.dmem.s1_kill(w) := false.B
 
     when (will_fire_load_incoming(w)) {
-      dmem_req(w).valid      := !exe_tlb_miss(w) && !exe_tlb_uncacheable(w)
+      dmem_req(w).valid      := !exe_tlb_miss(w) && !exe_tlb_uncacheable(w) && !exe_is_handle(w)
       dmem_req(w).bits.addr  := exe_tlb_paddr(w)
       dmem_req(w).bits.uop   := exe_tlb_uop(w)
 
@@ -833,11 +865,15 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
     //-------------------------------------------------------------
     // Write Addr into the LAQ/SAQ
+    /* Handles can never be a valid address, so it can also never be retried,
+     * woken up, or matched by ordering searches. The ROB flushes these out upon
+     * attempting to commit (thereby raising the exception). The untranslated
+     * handle is kept around so that later translation can get at it. */
     when (will_fire_load_incoming(w) || will_fire_load_retry(w))
     {
       val ldq_idx = Mux(will_fire_load_incoming(w), ldq_incoming_idx(w), ldq_retry_idx)
-      ldq(ldq_idx).bits.addr.valid          := true.B
-      ldq(ldq_idx).bits.addr.bits           := Mux(exe_tlb_miss(w), exe_tlb_vaddr(w), exe_tlb_paddr(w))
+      ldq(ldq_idx).bits.addr.valid          := !exe_is_handle(w)
+      ldq(ldq_idx).bits.addr.bits           := Mux(exe_tlb_miss(w) || exe_is_handle(w), exe_tlb_vaddr(w), exe_tlb_paddr(w))
       ldq(ldq_idx).bits.uop.pdst            := exe_tlb_uop(w).pdst
       ldq(ldq_idx).bits.addr_is_virtual     := exe_tlb_miss(w)
       ldq(ldq_idx).bits.addr_is_uncacheable := exe_tlb_uncacheable(w) && !exe_tlb_miss(w)
@@ -851,8 +887,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       val stq_idx = Mux(will_fire_sta_incoming(w) || will_fire_stad_incoming(w),
         stq_incoming_idx(w), stq_retry_idx)
 
-      stq(stq_idx).bits.addr.valid := !pf_st(w) // Prevent AMOs from executing!
-      stq(stq_idx).bits.addr.bits  := Mux(exe_tlb_miss(w), exe_tlb_vaddr(w), exe_tlb_paddr(w))
+      stq(stq_idx).bits.addr.valid := !pf_st(w) && !exe_is_handle(w) // Prevent AMOs from executing!
+      stq(stq_idx).bits.addr.bits  := Mux(exe_tlb_miss(w) || exe_is_handle(w), exe_tlb_vaddr(w), exe_tlb_paddr(w))
       stq(stq_idx).bits.uop.pdst   := exe_tlb_uop(w).pdst // Needed for AMOs
       stq(stq_idx).bits.addr_is_virtual := exe_tlb_miss(w)
 

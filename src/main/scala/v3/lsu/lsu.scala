@@ -252,7 +252,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   io.core.perf.acquire := io.dmem.perf.acquire
   io.core.perf.release := io.dmem.perf.release
 
-  val htlb = Module(new HTLB(
+  val htlb = Module(new FaultingHTLB(
     HTLBConfig(
       nSets = 0,
       nWays = 0,

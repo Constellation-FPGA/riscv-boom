@@ -252,6 +252,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   io.core.perf.acquire := io.dmem.perf.acquire
   io.core.perf.release := io.dmem.perf.release
 
+  val htlb = Module(new HTLB(
+    HTLBConfig(
+      nSets = 0,
+      nWays = 0,
+    )
+  ))
 
 
   val clear_store     = WireInit(false.B)
@@ -672,6 +678,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   dtlb.io.kill                      := exe_kill.reduce(_||_)
   dtlb.io.sfence                    := exe_sfence
 
+  for (w <- 0 until memWidth) {
+    htlb.io.req(w).valid      := exe_is_handle(w)
+    htlb.io.req(w).bits.haddr := exe_tlb_vaddr(w)
+    htlb.io.req(w).bits.cmd   := exe_cmd(w)
+  }
+
   // exceptions
   val ma_ld = widthMap(w => will_fire_load_incoming(w) && exe_req(w).bits.mxcpt.valid) // We get ma_ld in memaddrcalc
   val ma_st = widthMap(w => (will_fire_sta_incoming(w) || will_fire_stad_incoming(w)) && exe_req(w).bits.mxcpt.valid) // We get ma_ld in memaddrcalc
@@ -689,7 +701,16 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
    * virtual address. */
   /* NOTE: DTLB requests are suppressed for handles, so the pf_* and ae_* variants never fire
    * for a handle. */
-  val handle_fault = exe_is_handle;
+  val hf_ld = widthMap(w => exe_is_handle(w) && htlb.io.resp(w).handle_fault.ld && exe_tlb_uop(w).uses_ldq && !htlb.io.resp(w).miss)
+  val hf_st = widthMap(w => exe_is_handle(w) && htlb.io.resp(w).handle_fault.st && exe_tlb_uop(w).uses_stq && !htlb.io.resp(w).miss)
+
+  // There is no translated-handle path yet: a handle that doesn't fault would sit
+  // in the LDQ/STQ forever with addr.valid low and hang the ROB.
+  for (w <- 0 until memWidth) {
+    assert(!exe_is_handle(w) || hf_ld(w) || hf_st(w),
+      "[lsu] Yukon: handle did not fault, but handle translation is not implemented")
+  }
+
   // TODO: Add an assertion for the handle fault & page fault disjoint
   // Essentially, pf_ld & ha_ld and pf_st & ha_st are always disjoint.
   // TODO: Split handle_fault into ha_ld and ha_st so that we an do permissions
@@ -697,18 +718,19 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   // TODO check for xcpt_if and verify that never happens on non-speculative instructions.
   val mem_xcpt_valids = RegNext(widthMap(w =>
-                     (pf_ld(w) || pf_st(w) || handle_fault(w) || ae_ld(w) || ae_st(w) || ma_ld(w) || ma_st(w)) &&
+                     (pf_ld(w) || pf_st(w) || hf_ld(w) || hf_st(w) || ae_ld(w) || ae_st(w) || ma_ld(w) || ma_st(w)) &&
                      !io.core.exception &&
                      !IsKilledByBranch(io.core.brupdate, exe_tlb_uop(w))))
   val mem_xcpt_uops   = RegNext(widthMap(w => UpdateBrMask(io.core.brupdate, exe_tlb_uop(w))))
   val mem_xcpt_causes = RegNext(widthMap(w =>
     Mux(ma_ld(w), rocket.Causes.misaligned_load.U,
     Mux(ma_st(w), rocket.Causes.misaligned_store.U,
-    Mux(handle_fault(w), rocket.Causes.handle_fault.U,
+    Mux(hf_ld(w), rocket.Causes.handle_fault.U,
+    Mux(hf_st(w), rocket.Causes.handle_fault.U,
     Mux(pf_ld(w), rocket.Causes.load_page_fault.U,
     Mux(pf_st(w), rocket.Causes.store_page_fault.U,
     Mux(ae_ld(w), rocket.Causes.load_access.U,
-                  rocket.Causes.store_access.U))))))))
+                  rocket.Causes.store_access.U)))))))))
   val mem_xcpt_vaddrs = RegNext(exe_tlb_vaddr)
 
   for (w <- 0 until memWidth) {

@@ -57,6 +57,15 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
   val try_phys = Bool()
 }
 
+/** Response from the TLB for a handle translation.
+ */
+class TLBHTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
+  /** The handle ID/number that this response is for. */
+  val hid = UInt(handleBits.W)
+  /** The physical address that this handle is currently backed by. */
+  val paddr = UInt(maxSVAddrBits.W)
+}
+
 /** Describes the configuration of an [[HTLB]].
  *
  * @param nSets The number of sets available inside this HTLB.
@@ -81,6 +90,7 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val io = IO(new Bundle {
     val req = Flipped(Vec(memWidth, Decoupled(new HTLBReq)))
     val resp = Vec(memWidth, new HTLBResp)
+    val tlb = Flipped(Vec(memWidth, Valid(new TLBHTLBResp)))
     /** The size of the handle table in memory in bytes. */
     val htSize = Input(UInt(xLen.W))
   })

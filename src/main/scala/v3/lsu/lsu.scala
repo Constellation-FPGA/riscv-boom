@@ -604,6 +604,15 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   assert(!(hella_state =/= h_ready && hella_req.cmd === rocket.M_SFENCE),
     "SFENCE through hella interface not supported")
 
+  val exe_htlb_vaddr = widthMap(w =>
+                    Mux(will_fire_load_incoming (w) ||
+                        will_fire_stad_incoming (w) ||
+                        will_fire_sta_incoming  (w)  , exe_req(w).bits.addr,
+                    Mux(will_fire_sfence        (w)  , exe_req(w).bits.sfence.bits.addr,
+                    Mux(will_fire_load_retry    (w)  , ldq_retry_e.bits.addr.bits,
+                    Mux(will_fire_sta_retry     (w)  , stq_retry_e.bits.addr.bits,
+                    Mux(will_fire_hella_incoming(w)  , hella_req.addr,
+                                                       0.U))))))
   val exe_is_handle = widthMap(w =>
     Mux(will_fire_load_incoming(w) ||
         will_fire_sta_incoming(w)  ||
@@ -682,6 +691,21 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   }
   dtlb.io.kill                      := exe_kill.reduce(_||_)
   dtlb.io.sfence                    := exe_sfence
+
+  /* Should this handle request in-execution passthrough the HTLB? */
+  val exe_htlb_passthr = {
+    /* The HIDs for every in-execution handle translation. */
+    val hids = widthMap(w => hid(exe_htlb_vaddr(w)))
+    val is_ht_infinite = io.core.htSize === 0.U
+    val handles_in_bounds = widthMap(w =>
+      is_handle(exe_htlb_vaddr(w)) &&
+      (is_ht_infinite || (!is_ht_infinite && (hids(w) < io.core.htSize))))
+
+    widthMap(w =>
+      Mux(htlb_enabled,
+        Mux(will_fire_hella_incoming(w), true.B, !handles_in_bounds(w)),
+        true.B))
+  }
 
   for (w <- 0 until memWidth) {
     htlb.io.req(w).valid      := exe_is_handle(w)
@@ -772,8 +796,19 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                                         exe_tlb_vaddr(w)(corePgIdxBits-1,0)))
   val exe_tlb_uncacheable = widthMap(w => !(dtlb.io.resp(w).cacheable))
 
+  val small_handle_criterium = widthMap(w =>
+    !exe_htlb_passthr(w) && !htlb.io.resp(w).phys &&
+    htlb.io.resp(w).try_phys && exe_is_handle(w))
+
   for (w <- 0 until memWidth) {
     assert (exe_tlb_paddr(w) === dtlb.io.resp(w).paddr || exe_req(w).bits.sfence.valid, "[lsu] paddrs should match.")
+
+    val paddr_valid = (exe_tlb_paddr(w)(paddrBits-1, corePgIdxBits) =/= exe_tlb_vaddr(w)(paddrBits-1, corePgIdxBits)) &&
+      (exe_tlb_paddr(w)(paddrBits-1, corePgIdxBits) =/= 0.U) &&
+      !mem_xcpt_valids(w)
+    htlb.io.tlb(w).valid := dtlb.io.req(w).valid && paddr_valid && small_handle_criterium(w)
+    htlb.io.tlb(w).bits.hid := hid(exe_htlb_vaddr(w))
+    htlb.io.tlb(w).bits.paddr := exe_tlb_paddr(w) - exe_htlb_vaddr(w)(handleBits - 1, 0)
 
     when (mem_xcpt_valids(w))
     {

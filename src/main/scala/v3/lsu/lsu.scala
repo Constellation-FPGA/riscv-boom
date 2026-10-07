@@ -153,6 +153,9 @@ class LSUCoreIO(implicit p: Parameters) extends BoomBundle()(p)
     val release = Bool()
     val tlbMiss = Bool()
   })
+
+  /** The size of the handle table in memory, in bytes. */
+  val htSize = Input(UInt(xLen.W))
 }
 
 class LSUIO(implicit p: Parameters, edge: TLEdgeOut) extends BoomBundle()(p)
@@ -258,6 +261,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       nWays = boomParams.nL1HTLBWays,
     )
   ))
+  htlb.io.htSize := io.core.htSize
 
 
   val clear_store     = WireInit(false.B)

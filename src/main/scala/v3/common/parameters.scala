@@ -108,7 +108,6 @@ case class BoomCoreParams(
   usingHandles: Boolean = false,
   nL1HTLBWays: Int = 4,
   nL1HTLBSets: Int = 4,
-  enableHTLBPhysAddr: Boolean = false,
   enableHTLBSetCounters: Boolean = false, // one PerfCounter per HTLB set (walks per set)
   enablePHTSupport: Boolean = false,
   /** Make the Handle Table Walker use a 2-layer/-stage implementation. */

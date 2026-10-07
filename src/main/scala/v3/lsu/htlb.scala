@@ -43,7 +43,7 @@ class HTLBExceptions extends Bundle {
  */
 class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
   val miss = Bool()
-  val vaddr = UInt((vaddrBits+1).W)
+  val vaddr = UInt(vaddrBitsExtended.W)
   val handle_fault = new HTLBExceptions
 }
 

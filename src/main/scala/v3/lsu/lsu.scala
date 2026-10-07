@@ -186,6 +186,7 @@ class LDQEntry(implicit p: Parameters) extends BoomBundle()(p)
   val forward_stq_idx     = UInt(stqAddrSz.W) // Which store did we get the store-load forward from?
 
   val debug_wb_data       = UInt(xLen.W)
+  val is_handle           = Bool()
 }
 
 class STQEntry(implicit p: Parameters) extends BoomBundle()(p)
@@ -199,6 +200,7 @@ class STQEntry(implicit p: Parameters) extends BoomBundle()(p)
   val succeeded           = Bool() // D$ has ack'd this, we don't need to maintain this anymore
 
   val debug_wb_data       = UInt(xLen.W)
+  val is_handle           = Bool()
 }
 
 class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
@@ -602,6 +604,16 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   assert(!(hella_state =/= h_ready && hella_req.cmd === rocket.M_SFENCE),
     "SFENCE through hella interface not supported")
 
+  val exe_is_handle = widthMap(w =>
+    Mux(will_fire_load_incoming(w) ||
+        will_fire_sta_incoming(w)  ||
+        will_fire_stad_incoming(w)  , is_handle(exe_req(w).bits.addr),
+    Mux(will_fire_sfence        (w) , false.B,
+    Mux(will_fire_load_retry    (w) , ldq_retry_e.bits.is_handle,
+    Mux(will_fire_sta_retry     (w) , stq_retry_e.bits.is_handle,
+    Mux(will_fire_hella_incoming(w) , false.B,
+                                      false.B))))))
+
   val exe_tlb_uop = widthMap(w =>
                     Mux(will_fire_load_incoming (w) ||
                         will_fire_stad_incoming (w) ||
@@ -621,17 +633,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                     Mux(will_fire_sta_retry     (w)  , stq_retry_e.bits.addr.bits,
                     Mux(will_fire_hella_incoming(w)  , hella_req.addr,
                                                        0.U))))))
-
-  /* Svalbard production of handle faults.
-   * Only fresh requests from the AGU can carry a handle. Retries, wakeups,
-   * and store commits read addresses already sitting in the LDQ/STD and hella/sfence
-   * requests never carry one.
-   *
-   * CURRENTLY, EVERY HANDLE ALWAYS CAUSES A PAGE FAULT!
-   * When HW translation is implemented and compatible, we must change this. */
-  val exe_is_handle = widthMap(w =>
-    (will_fire_load_incoming(w) || will_fire_sta_incoming(w) || will_fire_stad_incoming(w)) &&
-    is_handle(exe_req(w).bits.addr))
 
   val exe_sfence = WireInit((0.U).asTypeOf(Valid(new rocket.SFenceReq)))
   for (w <- 0 until memWidth) {
@@ -905,6 +906,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       ldq(ldq_idx).bits.uop.pdst            := exe_tlb_uop(w).pdst
       ldq(ldq_idx).bits.addr_is_virtual     := exe_tlb_miss(w)
       ldq(ldq_idx).bits.addr_is_uncacheable := exe_tlb_uncacheable(w) && !exe_tlb_miss(w)
+      ldq(ldq_idx).bits.is_handle           := exe_is_handle(w)
 
       assert(!(will_fire_load_incoming(w) && ldq_incoming_e(w).bits.addr.valid),
         "[lsu] Incoming load is overwriting a valid address")
@@ -919,6 +921,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       stq(stq_idx).bits.addr.bits  := Mux(exe_tlb_miss(w) || exe_is_handle(w), exe_tlb_vaddr(w), exe_tlb_paddr(w))
       stq(stq_idx).bits.uop.pdst   := exe_tlb_uop(w).pdst // Needed for AMOs
       stq(stq_idx).bits.addr_is_virtual := exe_tlb_miss(w)
+      ldq(stq_idx).bits.is_handle           := exe_is_handle(w)
 
       assert(!(will_fire_sta_incoming(w) && stq_incoming_e(w).bits.addr.valid),
         "[lsu] Incoming store is overwriting a valid address")

@@ -81,6 +81,8 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val io = IO(new Bundle {
     val req = Flipped(Vec(memWidth, Decoupled(new HTLBReq)))
     val resp = Vec(memWidth, new HTLBResp)
+    /** The size of the handle table in memory in bytes. */
+    val htSize = Input(UInt(xLen.W))
   })
 
   /* Ensure that when we receive a valid request, the payload (handle address)

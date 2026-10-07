@@ -1435,6 +1435,9 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
   coreMonitorBundle.clock  := clock
   coreMonitorBundle.reset  := reset
 
+  /* Yukon/Svalbard stuff */
+  io.lsu.htSize := 0.U
+
 
   //-------------------------------------------------------------
   //-------------------------------------------------------------

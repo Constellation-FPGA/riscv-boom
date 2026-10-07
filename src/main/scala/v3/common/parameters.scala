@@ -350,8 +350,25 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
     * translation.
     */
   def is_handle(addr: UInt): Bool = {
-    require(addr.getWidth == 64, s"Address/number to be used as handle must be 64 bits wide")
+    require(addr.getWidth == 64,
+      "Address/number to be used as handle must be 64 bits wide")
     return addr === handlePattern
+  }
+
+  /** Return the handle ID for a provided address. */
+  def hid(haddr: UInt): UInt = {
+    require(haddr.getWidth == 64,
+      "Address/number to be used as handle must be 64 bits")
+    val id = haddr(xLen - 2, handleOffsetBits)
+    return id
+  }
+
+  /** Return the offset within the provided address, assuming it is a handle. */
+  def handle_offset(haddr: UInt): UInt = {
+    require(haddr.getWidth == 64,
+      "Address/number to be used as handle must be 64 bits")
+    val offset = haddr(handleOffsetBits, 0)
+    return offset
   }
 
   /* The Handle Table Walker (HTW) is a 2-level table.

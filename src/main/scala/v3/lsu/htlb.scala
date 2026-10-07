@@ -66,12 +66,23 @@ case class HTLBConfig(
  * This is an abstract class that describes how all HTLBs interface with other
  * modules.
  */
-class HTLB(cfg: HTLBConfig)(implicit p: Parameters) extends BoomModule()(p) {
+abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
+  extends BoomModule()(p) {
   val io = IO(new Bundle {
     val req = Flipped(Vec(memWidth, Decoupled(new HTLBReq)))
     val resp = Vec(memWidth, new HTLBResp)
   })
+}
 
+/** Handle Translation Lookaside Buffer that always produces handle faults.
+ *
+ * This is provided as an option because it is always valid for a handle to not
+ * be translate-able by hardware and need to fall back to software to do the
+ * right thing.
+ * This is similar in spirit to how a hardware page table walker might give up
+ * and require the operating system kernel to manually do a page table walk.
+ */
+class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p) {
   for (w <- 0 until memWidth) {
     val req = io.req(w)
 

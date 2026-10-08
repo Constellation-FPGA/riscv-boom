@@ -74,6 +74,15 @@ class HTLBPerfIO extends Bundle {
   val fill       = Bool()
 }
 
+/** A Handle Table Entry
+ */
+class HTE(implicit p: Parameters) extends BoomBundle()(p) {
+  val phys = Bool()
+  val try_phys = Bool()
+  val reserved = UInt((64 - maxSVAddrBits - 2).W)
+  val addr = UInt(maxSVAddrBits.W)
+}
+
 /** Describes the configuration of an [[HTLB]].
  *
  * @param nSets The number of sets available inside this HTLB.

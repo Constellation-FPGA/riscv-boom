@@ -491,6 +491,11 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val can_fire_release       = widthMap(w => (w == memWidth-1).B && io.dmem.release.valid)
   io.dmem.release.ready     := will_fire_release.reduce(_||_)
 
+  def canFire(is_virtual: Bool, addr: UInt): Bool = {
+    (is_virtual && !is_handle(addr) && RegNext(dtlb.io.miss_rdy)) ||
+    (is_handle(addr) && RegNext(htlb.io.miss_rdy))
+  }
+
   // Can we retry a load that missed in the TLB
   val can_fire_load_retry    = widthMap(w =>
                                ( ldq_retry_e.valid                            &&
@@ -498,7 +503,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                                  ldq_retry_e.bits.addr_is_virtual             &&
                                 !p1_block_load_mask(ldq_retry_idx)            &&
                                 !p2_block_load_mask(ldq_retry_idx)            &&
-                                RegNext(dtlb.io.miss_rdy)                     &&
+                                canFire(ldq_retry_e.bits.addr_is_virtual, ldq_retry_e.bits.addr.bits) &&
                                 !store_needs_order                            &&
                                 (w == memWidth-1).B                           && // TODO: Is this best scheduling?
                                 !ldq_retry_e.bits.order_fail))
@@ -510,7 +515,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                                  stq_retry_e.bits.addr.valid                  &&
                                  stq_retry_e.bits.addr_is_virtual             &&
                                  (w == memWidth-1).B                          &&
-                                 RegNext(dtlb.io.miss_rdy)                    &&
+                                 canFire(stq_retry_e.bits.addr_is_virtual, stq_retry_e.bits.addr.bits) &&
                                  !(widthMap(i => (i != w).B               &&
                                                  can_fire_std_incoming(i) &&
                                                  stq_incoming_idx(i) === stq_retry_idx).reduce(_||_))

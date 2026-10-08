@@ -98,6 +98,8 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
      * TODO: What are the effects when you turn off the HTLB midway through
      * operation? */
     val htlb_enabled = Input(Bool())
+    /** Is the HTLB in a ready state? */
+    val miss_rdy = Output(Bool())
     /** The base address of the Handle Table in memory. */
     val htBase = Input(UInt(xLen.W))
     /** The base address where HTLB dumps should be placed in memory. */
@@ -158,6 +160,8 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
   io.mem.keep_clock_enabled := false.B
   // Uncached response handling (if ever valid)
   io.mem.uncached_resp.foreach(_.ready := true.B)
+
+  io.miss_rdy := true.B
 
   for (w <- 0 until memWidth) {
     val req = io.req(w)

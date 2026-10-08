@@ -94,6 +94,8 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val tlb = Flipped(Vec(memWidth, Valid(new TLBHTLBResp)))
     val mem = new HellaCacheIO
     val kill = Input(Bool())
+    /** Raise to true.B to completely empty/clear out the HTLB. */
+    val clear_htlb = Input(Bool())
     /** The size of the handle table in memory in bytes. */
     val htSize = Input(UInt(xLen.W))
     /* FIXME: pht_enabled should be a construction-time flag. */

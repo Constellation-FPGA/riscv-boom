@@ -858,6 +858,51 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
 
 
+  // HTLB retry and wrong-path PerfCounters (see thesis todo/01-htlb-counters.md). These only observe state.
+  // The description equals the label: thesis src/yukon/bench.py names result columns by description.
+  // HTLBSimple has one lookup port per lane and one walker; htlb.io.perf.walk_lane names the lane
+  // whose miss started the walk.
+  {
+    val htlb_rdy = RegNext(htlb.io.miss_rdy)
+    val ld_handle_retry = ldq_retry_e.valid && ldq_retry_e.bits.addr.valid &&
+                          ldq_retry_e.bits.addr_is_virtual && is_handle(ldq_retry_e.bits.addr.bits)
+    val st_handle_retry = stq_retry_e.valid && stq_retry_e.bits.addr.valid &&
+                          stq_retry_e.bits.addr_is_virtual && is_handle(stq_retry_e.bits.addr.bits)
+    midas.targetutils.PerfCounter((ld_handle_retry && !htlb_rdy).asUInt +& (st_handle_retry && !htlb_rdy).asUInt,
+      "lsu_handle_retry_blocked", "lsu_handle_retry_blocked")
+
+    val other_virtual_ld = (0 until numLdqEntries).map(i =>
+      ldq(i).valid && ldq(i).bits.addr.valid && ldq(i).bits.addr_is_virtual &&
+      !is_handle(ldq(i).bits.addr.bits)).reduce(_||_)
+    midas.targetutils.PerfCounter(ld_handle_retry && !htlb_rdy && other_virtual_ld,
+      "lsu_retry_hol_blocked", "lsu_retry_hol_blocked")
+
+    val retry_miss = widthMap(w => (will_fire_load_retry(w) || will_fire_sta_retry(w)) &&
+                                   htlb.io.req(w).valid && !exe_htlb_passthr(w) && htlb.io.resp(w).miss)
+    midas.targetutils.PerfCounter(PopCount(retry_miss), "lsu_handle_retry_miss", "lsu_handle_retry_miss")
+
+    // The uop in the HTLB stage in the walk_start cycle started the walk.
+    val walk_valid  = RegInit(false.B)
+    val walk_killed = RegInit(false.B)
+    val walk_brmask = Reg(UInt(maxBrCount.W))
+    when (htlb.io.perf.walk_start) {
+      walk_valid  := true.B
+      val walk_uop = if (memWidth == 1) exe_tlb_uop(0) else exe_tlb_uop(htlb.io.perf.walk_lane(log2Ceil(memWidth) - 1, 0))
+      walk_brmask := GetNewBrMask(io.core.brupdate, walk_uop)
+      walk_killed := IsKilledByBranch(io.core.brupdate, walk_uop) || io.core.exception
+    } .elsewhen (walk_valid) {
+      walk_brmask := GetNewBrMask(io.core.brupdate, walk_brmask)
+      when (IsKilledByBranch(io.core.brupdate, walk_brmask) || io.core.exception) {
+        walk_killed := true.B
+      }
+      when (htlb.io.perf.fill || htlb.io.miss_rdy) {
+        walk_valid := false.B
+      }
+    }
+    midas.targetutils.PerfCounter(htlb.io.perf.fill && walk_valid && walk_killed,
+      "htlb_fill_wrong_path", "htlb_fill_wrong_path")
+  }
+
   //------------------------------
   // Issue Someting to Memory
   //

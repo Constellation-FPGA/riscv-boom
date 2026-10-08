@@ -67,6 +67,13 @@ class TLBHTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
   val paddr = UInt(maxSVAddrBits.W)
 }
 
+// Events for PerfCounters in the LSU. Nothing in the HTLB reads these back.
+class HTLBPerfIO extends Bundle {
+  val walk_start = Bool()
+  val walk_lane  = UInt(2.W) // the LSU lane whose miss started the walk (memWidth <= 2)
+  val fill       = Bool()
+}
+
 /** Describes the configuration of an [[HTLB]].
  *
  * @param nSets The number of sets available inside this HTLB.
@@ -100,6 +107,7 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val htlb_enabled = Input(Bool())
     /** Is the HTLB in a ready state? */
     val miss_rdy = Output(Bool())
+    val perf = Output(new HTLBPerfIO)
     /** The base address of the Handle Table in memory. */
     val htBase = Input(UInt(xLen.W))
     /** The base address where HTLB dumps should be placed in memory. */
@@ -165,6 +173,10 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
 
   io.miss_rdy := true.B
   io.htInvald := false.B
+
+  io.perf.walk_start := false.B
+  io.perf.walk_lane  := 0.U
+  io.perf.fill       := false.B
 
   for (w <- 0 until memWidth) {
     val req = io.req(w)

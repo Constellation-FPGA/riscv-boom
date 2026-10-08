@@ -154,6 +154,8 @@ class LSUCoreIO(implicit p: Parameters) extends BoomBundle()(p)
     val tlbMiss = Bool()
   })
 
+  /** The base address of the Handle Table in memory. */
+  val htBase = Input(UInt(xLen.W))
   /** The size of the handle table in memory, in bytes. */
   val htSize = Input(UInt(xLen.W))
   /** "Command wire" to completely empty/clear out the HTLB. */
@@ -269,6 +271,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   io.htlb_mem <> htlb.io.mem
   htlb.io.clear_htlb := io.core.clear_htlb
   htlb.io.pht_enabled := true.B
+  htlb.io.htBase := io.core.htBase
   htlb.io.htSize := io.core.htSize
 
 

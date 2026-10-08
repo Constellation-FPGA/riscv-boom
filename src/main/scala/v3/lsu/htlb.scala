@@ -83,6 +83,15 @@ class HTE(implicit p: Parameters) extends BoomBundle()(p) {
   val addr = UInt(maxSVAddrBits.W)
 }
 
+/** TODO: Document this.
+ * ???
+ */
+class TopLevelCacheEntry(implicit p: Parameters) extends BoomBundle()(p) {
+  val valid = Bool()
+  val tag = UInt(htwL1Bits.W)
+  val data = UInt(maxSVAddrBits.W)     // Store the base address for inner walks
+}
+
 /** Describes the configuration of an [[HTLB]].
  *
  * @param nSets The number of sets available inside this HTLB.

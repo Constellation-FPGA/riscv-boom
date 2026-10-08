@@ -694,6 +694,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   }
   dtlb.io.kill                      := exe_kill.reduce(_||_)
   dtlb.io.sfence                    := exe_sfence
+  htlb.io.kill                      := exe_kill.reduce(_||_)
 
   /* Should this handle request in-execution passthrough the HTLB? */
   val exe_htlb_passthr = {

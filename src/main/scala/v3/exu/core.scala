@@ -1440,6 +1440,7 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
   io.lsu.htBase := 1.U // Any bit set to enable HTLB.
   io.lsu.htSize := 0.U
   io.lsu.htDump := 0.U
+  io.lsu.htInval := 0.U
   io.lsu.clear_htlb := false.B
 
 

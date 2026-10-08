@@ -106,6 +106,8 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val htDump = Input(UInt(maxSVAddrBits.W))
     /** Handle to be invalidated in the HTLB. */
     val htInval = Input(UInt(handleBits.W))
+    /** Feedback to handle invalidation CSR that invalidation is complete. */
+    val htInvald = Output(Bool())
     /** Raise to true.B to completely empty/clear out the HTLB. */
     val clear_htlb = Input(Bool())
     /** The size of the handle table in memory in bytes. */
@@ -162,6 +164,7 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
   io.mem.uncached_resp.foreach(_.ready := true.B)
 
   io.miss_rdy := true.B
+  io.htInvald := false.B
 
   for (w <- 0 until memWidth) {
     val req = io.req(w)

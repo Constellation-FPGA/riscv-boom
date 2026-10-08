@@ -138,6 +138,7 @@ case class BoomCoreParams(
   val useConditionalZero = false
   override val useVector = false
   override def customCSRs(implicit p: Parameters) = new BoomCustomCSRs
+  override def customIsaExt = if (usingHandles) Some("handle") else None
 }
 
 class BoomTraceBundle extends Bundle {
@@ -165,9 +166,33 @@ class BoomCustomCSRs(implicit p: Parameters) extends freechips.rocketchip.tile.C
     )
     Some(CustomCSR(chickenCSRId, mask, Some(init)))
   }
+
+  override def htBaseCSR = {
+    Some(CustomCSR(htBaseCSRId,  (BigInt(1) << 64) - 1, Some(BigInt(0x00000000L))))
+  }
+
+  override def htDumpCSR = {
+    Some(CustomCSR(htDumpCSRId,  (BigInt(1) << 64) - 1, Some(BigInt(0x00000000L))))
+  }
+
+  override def htInvalCSR = {
+    Some(CustomCSR(htInvalCSRId,  (BigInt(1) << 64) - 1, Some(BigInt(0x00000000L))))
+  }
+
+  override def htSizeCSR = {
+    Some(CustomCSR(htSizeCSRId,  (BigInt(1) << 64) - 1, Some(BigInt(0x00000000L))))
+  }
+
+  override def l2TLBAccessCSR = {
+    Some(CustomCSR(l2TLBAccessCSRId,  (BigInt(1) << 64) - 1, Some(BigInt(0x00000000L))))
+  }
+
+  override def handleTracingCSR = {
+    Some(CustomCSR(handleTracingCSRId,  (BigInt(1) << 64) - 1, Some(BigInt(0x00000000L))))
+  }
+
   def disableOOO = getOrElse(chickenCSR, _.value(3), true.B)
   def marchid = CustomCSR.constant(CSRs.marchid, BigInt(2))
-
   override def decls: Seq[CustomCSR] = super.decls :+ marchid
 }
 

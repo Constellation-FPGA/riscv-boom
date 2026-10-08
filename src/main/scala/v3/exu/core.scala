@@ -1440,13 +1440,33 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
   coreMonitorBundle.reset  := reset
 
   /* Yukon/Svalbard stuff */
-  // io.lsu.htBase := custom_csrs.htBase
-  io.lsu.htBase := 1.U // Any bit set to enable HTLB.
-  io.lsu.htSize := 0.U
-  io.lsu.htDump := 0.U
-  io.lsu.htInval := 0.U
-  io.lsu.clear_htlb := false.B
+  /* For Custom CSR numbering, see freechips.rocketchip.tile.CustomCSRs class. */
+  /* NOTE: bpmCSR is NOT included in these configs, so chickenCSR is ID 0! */
 
+  /* Provide default connections for the handle table dump address CSR. */
+  csr.io.customCSRs(3).set := false.B
+  csr.io.customCSRs(3).sdata := 0.U
+  // While dumping the handle table to memory, we must disable interrupts.
+  // csr.io.clear_mie := false.B
+
+  when (io.lsu.htInvald) {
+    midas.targetutils.SynthesizePrintf(printf("[Core] HTLB Invalidation Completed\\n"))
+  }
+
+  /* When the HTLB states that handle table is invalidated, clear out the CSR
+   * that tells us which handle to invalidate, preventing an infinite loop. */
+  csr.io.customCSRs(4).set := io.lsu.htInvald
+  csr.io.customCSRs(4).sdata := 0.U
+
+  /* Increment the CSR counting number of L2 TLB accesses */
+  csr.io.customCSRs(5).set := io.lsu.perf.tlbMiss
+  csr.io.customCSRs(5).sdata := csr.io.customCSRs(5).value + 1.U
+
+  io.lsu.htBase := custom_csrs.htBase // NOTE: Any bit set will enable HTLB.
+  io.lsu.htSize := custom_csrs.htSize
+  io.lsu.htDump := custom_csrs.htDump
+  io.lsu.htInval := custom_csrs.htInval
+  io.lsu.clear_htlb := csr.io.clear_htlb
 
   //-------------------------------------------------------------
   //-------------------------------------------------------------

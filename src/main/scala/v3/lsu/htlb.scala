@@ -234,6 +234,10 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
   }
 }
 
+class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
+    extends HTLB(cfg)(p) {
+}
+
 /** Class meant for debugging the HTLB with Perfetto.
  *
  * Uses Midas (Golden Gate) synthesized printf's so that FireSim simulations

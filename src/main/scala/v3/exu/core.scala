@@ -1437,6 +1437,7 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
 
   /* Yukon/Svalbard stuff */
   io.lsu.htSize := 0.U
+  io.lsu.clear_htlb := false.B
 
 
   //-------------------------------------------------------------

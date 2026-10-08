@@ -239,7 +239,14 @@ class BoomTileModuleImp(outer: BoomTile) extends BaseTileModuleImp(outer){
   ptw.io.requestor <> ptwPorts.toSeq
   ptw.io.mem +=: hellaCachePorts
 
+  // Grant HTLB L1 access to Cache
+  lsu.io.htlb_mem +=: hellaCachePorts
+
    // LSU IO
+  /* XXX: Any attachments to the HellaCache's ports (in hellaCachePorts) MUST
+   * come BEFORE this arbiter is constructed! If you do not, you will get a
+   * compilation error.
+   * tile.scala:line:col: error: sink "lsu.io_..." is not fully initialized in "BoomTile" */
   val hellaCacheArb = Module(new HellaCacheArbiter(hellaCachePorts.length)(outer.p))
   hellaCacheArb.io.requestor <> hellaCachePorts.toSeq
   lsu.io.hellacache <> hellaCacheArb.io.mem

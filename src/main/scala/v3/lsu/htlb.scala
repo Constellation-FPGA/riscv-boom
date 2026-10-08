@@ -98,6 +98,8 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val htBase = Input(UInt(xLen.W))
     /** The base address where HTLB dumps should be placed in memory. */
     val htDump = Input(UInt(maxSVAddrBits.W))
+    /** Handle to be invalidated in the HTLB. */
+    val htInval = Input(UInt(handleBits.W))
     /** Raise to true.B to completely empty/clear out the HTLB. */
     val clear_htlb = Input(Bool())
     /** The size of the handle table in memory in bytes. */

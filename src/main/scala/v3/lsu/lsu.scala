@@ -160,6 +160,8 @@ class LSUCoreIO(implicit p: Parameters) extends BoomBundle()(p)
   val htSize = Input(UInt(xLen.W))
   /** The base address where HTLB dumps should be placed in memory. */
   val htDump = Input(UInt(xLen.W))
+  /** Handle to be invalidated in the HTLB. */
+  val htInval = Input(UInt(xLen.W))
   /** "Command wire" to completely empty/clear out the HTLB. */
   val clear_htlb = Input(Bool())
 }
@@ -272,6 +274,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   ))
   io.htlb_mem <> htlb.io.mem
   htlb.io.clear_htlb := io.core.clear_htlb
+  htlb.io.htInval := io.core.htInval
   htlb.io.pht_enabled := true.B
   htlb.io.htBase := io.core.htBase
   htlb.io.htSize := io.core.htSize

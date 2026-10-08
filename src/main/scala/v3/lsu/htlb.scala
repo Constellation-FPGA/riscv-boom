@@ -94,6 +94,10 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val tlb = Flipped(Vec(memWidth, Valid(new TLBHTLBResp)))
     val mem = new HellaCacheIO
     val kill = Input(Bool())
+    /** Enable/Disable the HTLB and its state machinery.
+     * TODO: What are the effects when you turn off the HTLB midway through
+     * operation? */
+    val htlb_enabled = Input(Bool())
     /** The base address of the Handle Table in memory. */
     val htBase = Input(UInt(xLen.W))
     /** The base address where HTLB dumps should be placed in memory. */

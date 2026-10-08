@@ -4,8 +4,9 @@ import chisel3._
 import chisel3.util._
 
 import org.chipsalliance.cde.config.Parameters
-
 import freechips.rocketchip.rocket
+import freechips.rocketchip.rocket.HellaCacheIO
+
 import boom.v3.common._
 
 /** A request made to an HTLB.
@@ -91,8 +92,11 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val req = Flipped(Vec(memWidth, Decoupled(new HTLBReq)))
     val resp = Vec(memWidth, new HTLBResp)
     val tlb = Flipped(Vec(memWidth, Valid(new TLBHTLBResp)))
+    val mem = new HellaCacheIO
     /** The size of the handle table in memory in bytes. */
     val htSize = Input(UInt(xLen.W))
+    /* FIXME: pht_enabled should be a construction-time flag. */
+    val pht_enabled = Input(Bool())
   })
 
   /* Ensure that when we receive a valid request, the payload (handle address)
@@ -113,6 +117,35 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
  * and require the operating system kernel to manually do a page table walk.
  */
 class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p) {
+  // Memory Request Construction
+  val walk_addr = WireInit(0.U(xLen.W))
+
+  /* Make all the connections to the HellaCache L1d$ that the HTW will need. */
+  // IO assignments for walker
+  io.mem.req.valid := false.B
+  io.mem.req.bits.phys := io.pht_enabled
+  io.mem.req.bits.cmd := rocket.M_XRD
+  // FIXME: xBytes = xLen / 8
+  io.mem.req.bits.size := log2Ceil(xLen / 8).U
+  io.mem.req.bits.signed := false.B
+  io.mem.req.bits.addr := walk_addr
+  io.mem.req.bits.idx.foreach(_ := walk_addr)
+  io.mem.req.bits.dprv := Mux(io.pht_enabled, rocket.PRV.S.U, rocket.PRV.U.U)
+  io.mem.req.bits.dv := false.B
+  io.mem.req.bits.tag := DontCare
+  io.mem.req.bits.no_resp := false.B
+  io.mem.req.bits.no_alloc := DontCare
+  io.mem.req.bits.no_xcpt := DontCare
+  io.mem.req.bits.data := DontCare
+  io.mem.req.bits.mask := DontCare
+  io.mem.s1_kill := false.B
+  io.mem.s1_data.data := 0.U
+  io.mem.s1_data.mask := 0.U
+  io.mem.s2_kill := false.B
+  io.mem.keep_clock_enabled := false.B
+  // Uncached response handling (if ever valid)
+  io.mem.uncached_resp.foreach(_.ready := true.B)
+
   for (w <- 0 until memWidth) {
     val req = io.req(w)
 

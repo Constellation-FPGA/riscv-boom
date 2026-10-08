@@ -165,6 +165,7 @@ class LSUIO(implicit p: Parameters, edge: TLEdgeOut) extends BoomBundle()(p)
   val dmem  = new LSUDMemIO
 
   val hellacache = Flipped(new freechips.rocketchip.rocket.HellaCacheIO)
+  val htlb_mem = new rocket.HellaCacheIO
 }
 
 class LDQEntry(implicit p: Parameters) extends BoomBundle()(p)
@@ -263,6 +264,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       nWays = boomParams.nL1HTLBWays,
     )
   ))
+  io.htlb_mem <> htlb.io.mem
+  htlb.io.pht_enabled := true.B
   htlb.io.htSize := io.core.htSize
 
 

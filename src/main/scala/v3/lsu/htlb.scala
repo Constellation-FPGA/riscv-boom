@@ -93,6 +93,7 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val resp = Vec(memWidth, new HTLBResp)
     val tlb = Flipped(Vec(memWidth, Valid(new TLBHTLBResp)))
     val mem = new HellaCacheIO
+    val kill = Input(Bool())
     /** The size of the handle table in memory in bytes. */
     val htSize = Input(UInt(xLen.W))
     /* FIXME: pht_enabled should be a construction-time flag. */

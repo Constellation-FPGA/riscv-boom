@@ -289,6 +289,11 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     }
   }
 
+  for (w <- 0 until memWidth) {
+    io.resp(w).handle_fault.ld := false.B
+    io.resp(w).handle_fault.st := false.B
+  }
+
   val twoStageHTW = boomParams.enableTwoStageHTW
 
   val timeline = new TimelineTracker()

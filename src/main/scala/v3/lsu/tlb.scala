@@ -23,6 +23,7 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
     val sfence = Input(Valid(new SFenceReq))
     val ptw = new TLBPTWIO
     val kill = Input(Bool())
+    val htlb_enabled = Input(Bool())
   })
   io.ptw := DontCare
   io.resp := DontCare
@@ -130,6 +131,7 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
   val s_ready :: s_request :: s_wait :: s_wait_invalidate :: Nil = Enum(4)
   val state = RegInit(s_ready)
   val r_refill_tag = Reg(UInt(vpnBits.W))
+  val r_refill_handle = Reg(Bool())
   val r_superpage_repl_addr = Reg(UInt(log2Ceil(superpage_entries.size).W))
   val r_sectored_repl_addr = Reg(UInt(log2Ceil(sectored_entries.size).W))
   val r_sectored_hit_addr = Reg(UInt(log2Ceil(sectored_entries.size).W))
@@ -138,7 +140,15 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
   val priv = if (instruction) io.ptw.status.prv else io.ptw.status.dprv
   val priv_s = priv(0)
   val priv_uses_vm = priv <= PRV.S.U
-  val vm_enabled = widthMap(w => usingVM.B && io.ptw.ptbr.mode(io.ptw.ptbr.mode.getWidth-1) && priv_uses_vm && !io.req(w).bits.passthrough)
+  val vm_enabled = widthMap(w => usingVM.B && io.ptw.ptbr.mode(io.ptw.ptbr.mode.getWidth-1) && priv_uses_vm && !io.req(w).bits.passthrough && !io.req(w).bits.htlb_passthrough)
+
+  val timeline = new TimelineTracker()
+  timeline.trackState("tlb.state", "ready", state === s_ready)
+  timeline.trackState("tlb.state", "request", state === s_request)
+  timeline.trackState("tlb.state", "wait", state === s_wait)
+  timeline.trackState("tlb.state", "wait_invalidate", state === s_wait_invalidate)
+  timeline.trackState("tlb.state", "ptw_req", io.ptw.req.valid)
+  timeline.trackState("tlb.state", "ptw_resp", io.ptw.resp.valid)
 
   // share a single physical memory attribute checker (unshare if critical path)
   val vpn = widthMap(w => io.req(w).bits.vaddr(vaddrBits-1, pgIdxBits))
@@ -172,7 +182,7 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
   val superpage_hits = widthMap(w => VecInit(superpage_entries.map(_.hit(vpn(w)))))
   val hitsVec = widthMap(w => VecInit(all_entries.map(vm_enabled(w) && _.hit(vpn(w)))))
   val real_hits = widthMap(w => hitsVec(w).asUInt)
-  val hits = widthMap(w => Cat(!vm_enabled(w), real_hits(w)))
+  val hits = widthMap(w => Mux(vm_enabled(w), Cat(!vm_enabled(w), real_hits(w)), 0.U))
   val ppn = widthMap(w => Mux1H(hitsVec(w) :+ !vm_enabled(w), all_entries.map(_.ppn(vpn(w))) :+ vpn(w)(ppnBits-1, 0)))
 
     // permission bit arrays
@@ -273,6 +283,13 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
   val tlb_hit = widthMap(w => real_hits(w).orR)
   val tlb_miss = widthMap(w => vm_enabled(w) && !bad_va(w) && !tlb_hit(w))
 
+  midas.targetutils.PerfCounter(widthMap(w => io.resp(w).miss).reduce(_ || _), "l1_tlb_miss", "l1_tlb_miss")
+  for (w <- 0 until memWidth) {
+    timeline.trackState("tlb.access"+w, "hit", io.req(w).valid && vm_enabled(w) && tlb_hit(w))
+    timeline.trackState("tlb.access"+w, "miss", io.req(w).valid && vm_enabled(w) && tlb_miss(w))
+  }
+  midas.targetutils.PerfCounter(do_refill && widthMap(w => io.req(w).bits.passthrough).reduce(_ || _), "l1_tlb_unnecessary_miss", "l1_tlb_unmiss")
+
   val sectored_plru = new PseudoLRU(sectored_entries.size)
   val superpage_plru = new PseudoLRU(superpage_entries.size)
   for (w <- 0 until memWidth) {
@@ -308,11 +325,24 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
     io.resp(w).paddr := Cat(ppn(w), io.req(w).bits.vaddr(pgIdxBits-1, 0))
     io.resp(w).size := io.req(w).bits.size
     io.resp(w).cmd := io.req(w).bits.cmd
+
+    if (boomParams.enableStateTracing) {
+      when (tlb_hit(w) && vm_enabled(w) && io.htlb_enabled && io.req(w).bits.vaddr =/= 0.U && io.resp(w).paddr =/= 0.U) {
+        midas.targetutils.SynthesizePrintf(printf("T%x,%x,%d,%d,%d\n", io.req(w).bits.vaddr, io.resp(w).paddr, io.req(w).bits.handle, io.req(w).bits.passthrough, io.req(w).bits.htlb_passthrough))
+      }
+      when (tlb_hit(w) && io.htlb_enabled && io.req(w).bits.vaddr =/= 0.U) {
+        midas.targetutils.SynthesizePrintf(printf("Tdebug:%d,%x\n", vm_enabled(w), io.resp(w).paddr))
+      }
+      when (io.resp(w).ae.ld && io.htlb_enabled) {
+        midas.targetutils.SynthesizePrintf(printf("Tael:%b,%b,%b (%b,%b) -> %b\n", ae_valid_array(w), ae_ld_array(w), hits(w), io.resp(w).ae.ld, ae_array(w), pr_array(w)))
+      }
+    }
   }
 
   io.ptw.req.valid := state === s_request
   io.ptw.req.bits.valid := !io.kill
   io.ptw.req.bits.bits.addr := r_refill_tag
+  io.ptw.req.bits.bits.handle := r_refill_handle
 
   if (usingVM) {
     val sfence = io.sfence.valid
@@ -320,6 +350,7 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
       when (io.req(w).fire && tlb_miss(w) && state === s_ready) {
         state := s_request
         r_refill_tag := vpn(w)
+        r_refill_handle := io.req(w).bits.handle
 
         r_superpage_repl_addr := replacementEntry(superpage_entries, superpage_plru.way)
         r_sectored_repl_addr  := replacementEntry(sectored_entries, sectored_plru.way)
@@ -359,5 +390,5 @@ class NBDTLB(instruction: Boolean, lgMaxSize: Int, cfg: TLBConfig)(implicit edge
     Mux(valids.andR, alt, PriorityEncoder(~valids))
   }
 
-
+  midas.targetutils.PerfCounter(widthMap(w => io.resp(w).miss && io.req(w).bits.handle).reduce(_ || _), "l1_tlb_miss_from_handle_translation", "l1_tlb_miss_from_handle_translation")
 }

@@ -286,7 +286,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // val htlb_enabled = boomParams.usingHandles && io.core.htBase.orR &&
   //   (((io.core.status.dprv + 1.U) <= ENABLE_HTLB.U) || (io.core.htDump.orR))
   val htlb_enabled = WireInit(true.B)
-  // dtlb.io.htlb_enabled := htlb_enabled // For state tracing inside TLB
+  dtlb.io.htlb_enabled := htlb_enabled // For state tracing inside TLB
   htlb.io.htlb_enabled := htlb_enabled
 
   val clear_store     = WireInit(false.B)

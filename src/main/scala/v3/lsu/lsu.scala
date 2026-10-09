@@ -220,10 +220,30 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val io = IO(new LSUIO)
   io.hellacache := DontCare
 
+  val timeline = new TimelineTracker()
 
   val ldq = Reg(Vec(numLdqEntries, Valid(new LDQEntry)))
   val stq = Reg(Vec(numStqEntries, Valid(new STQEntry)))
 
+  for (i <- 0 until numLdqEntries) {
+    val track = "ldq." + i
+    timeline.trackStateValue(track, "pointer", ldq(i).bits.addr.bits, ldq(i).valid && !ldq(i).bits.is_handle)
+    timeline.trackStateValue(track, "handle", ldq(i).bits.addr.bits, ldq(i).valid && ldq(i).bits.is_handle)
+
+    timeline.trackState(track, "executed", ldq(i).valid && ldq(i).bits.executed, ldq(i).bits.addr.bits)
+    timeline.trackState(track, "succeeded", ldq(i).valid && ldq(i).bits.succeeded, ldq(i).bits.addr.bits)
+    timeline.trackState(track, "order_fail", ldq(i).valid && ldq(i).bits.order_fail, ldq(i).bits.addr.bits)
+    timeline.trackState(track, "observed", ldq(i).valid && ldq(i).bits.observed, ldq(i).bits.addr.bits)
+  }
+
+  for (i <- 0 until numStqEntries) {
+    val track = "stq." + i
+    timeline.trackStateValue(track, "pointer", stq(i).bits.addr.bits, stq(i).valid && !stq(i).bits.is_handle)
+    timeline.trackStateValue(track, "handle", stq(i).bits.addr.bits, stq(i).valid && stq(i).bits.is_handle)
+    timeline.trackState(track, "committed", stq(i).valid && stq(i).bits.committed, stq(i).bits.addr.bits)
+    timeline.trackState(track, "succeeded", stq(i).valid && stq(i).bits.succeeded, stq(i).bits.addr.bits)
+    timeline.trackState(track, "data_valid", stq(i).valid && stq(i).bits.data.valid, stq(i).bits.addr.bits)
+  }
 
 
   val ldq_head         = Reg(UInt(ldqAddrSz.W))
@@ -233,6 +253,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val stq_commit_head  = Reg(UInt(stqAddrSz.W)) // point to next store to commit
   val stq_execute_head = Reg(UInt(stqAddrSz.W)) // point to next store to execute
 
+  timeline.trackCounter("ldq.head", ldq_head)
+  timeline.trackCounter("ldq.tail", ldq_tail)
+  timeline.trackCounter("stq.head", stq_head)
+  timeline.trackCounter("stq.tail", stq_tail)
+  timeline.trackCounter("stq.commit_head", stq_commit_head)
+  timeline.trackCounter("stq.execute_head", stq_execute_head)
 
   // If we got a mispredict, the tail will be misaligned for 1 extra cycle
   assert (io.core.brupdate.b2.mispredict ||
@@ -258,7 +284,13 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val hella_data            = Reg(new rocket.HellaCacheWriteData)
   val hella_paddr           = Reg(UInt(paddrBits.W))
   val hella_xcpt            = Reg(new rocket.HellaCacheExceptions)
-
+  // timeline.trackState("hella", "ready", hella_state === h_ready)
+  timeline.trackState("hella", "s1", hella_state === h_s1)
+  timeline.trackState("hella", "s2", hella_state === h_s2)
+  timeline.trackState("hella", "s2_nack", hella_state === h_s2_nack)
+  timeline.trackState("hella", "wait", hella_state === h_wait)
+  timeline.trackState("hella", "replay", hella_state === h_replay)
+  timeline.trackState("hella", "dead", hella_state === h_dead)
 
   val dtlb = Module(new NBDTLB(
     instruction = false, lgMaxSize = log2Ceil(coreDataBytes), rocket.TLBConfig(dcacheParams.nTLBSets, dcacheParams.nTLBWays)))
@@ -267,6 +299,11 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   io.core.perf.tlbMiss := io.ptw.req.fire
   io.core.perf.acquire := io.dmem.perf.acquire
   io.core.perf.release := io.dmem.perf.release
+  midas.targetutils.PerfCounter(
+    io.dmem.perf.acquire,
+    "dcache_miss",
+    "dcache_miss",
+  )
 
   val htlb = Module(new FaultingHTLB(
     HTLBConfig(
@@ -374,6 +411,18 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
     assert(!(dis_ld_val && dis_st_val), "A UOP is trying to go into both the LDQ and the STQ")
   }
+
+  midas.targetutils.PerfCounter(
+    io.core.ldq_full.reduce(_||_),
+    "ldq_full",
+    "ldq_full",
+  )
+
+  midas.targetutils.PerfCounter(
+    io.core.stq_full.reduce(_||_),
+    "stq_full",
+    "stq_full",
+  )
 
   ldq_tail := ld_enq_idx
   stq_tail := st_enq_idx
@@ -559,6 +608,58 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // Can we fire a hellacache request that the dcache nack'd
   val can_fire_hella_wakeup    = WireInit(widthMap(w => false.B)) // This is assigned to in the hellashim controller
 
+  midas.targetutils.PerfCounter(
+    !(can_fire_load_incoming.reduce(_||_) || can_fire_stad_incoming.reduce(_||_) || can_fire_sta_incoming.reduce(_||_) ||
+      can_fire_std_incoming.reduce(_||_) || can_fire_sfence.reduce(_||_) || can_fire_release.reduce(_||_) ||
+      can_fire_load_retry.reduce(_||_) || can_fire_sta_retry.reduce(_||_) || can_fire_store_commit.reduce(_||_) ||
+      can_fire_load_wakeup.reduce(_||_) || can_fire_hella_incoming.reduce(_||_) || can_fire_hella_wakeup.reduce(_||_)),
+    "lsu_cant_fire", "lsu_cant_fire")
+
+  midas.targetutils.PerfCounter(can_fire_load_incoming.reduce(_||_), "lsu_can_fire_load_incoming", "lsu_can_fire_load_incoming")
+  midas.targetutils.PerfCounter(can_fire_stad_incoming.reduce(_||_), "lsu_can_fire_stad_incoming", "lsu_can_fire_stad_incoming")
+  midas.targetutils.PerfCounter(can_fire_sta_incoming.reduce(_||_), "lsu_can_fire_sta_incoming", "lsu_can_fire_sta_incoming")
+  midas.targetutils.PerfCounter(can_fire_std_incoming.reduce(_||_), "lsu_can_fire_std_incoming", "lsu_can_fire_std_incoming")
+  midas.targetutils.PerfCounter(can_fire_sfence.reduce(_||_), "lsu_can_fire_sfence", "lsu_can_fire_sfence")
+  midas.targetutils.PerfCounter(can_fire_release.reduce(_||_), "lsu_can_fire_release", "lsu_can_fire_release")
+  midas.targetutils.PerfCounter(can_fire_load_retry.reduce(_||_), "lsu_can_fire_load_retry", "lsu_can_fire_load_retry")
+  midas.targetutils.PerfCounter(can_fire_sta_retry.reduce(_||_), "lsu_can_fire_sta_retry", "lsu_can_fire_sta_retry")
+  midas.targetutils.PerfCounter(can_fire_store_commit.reduce(_||_), "lsu_can_fire_store_commit", "lsu_can_fire_store_commit")
+  midas.targetutils.PerfCounter(can_fire_load_wakeup.reduce(_||_), "lsu_can_fire_load_wakeup", "lsu_can_fire_load_wakeup")
+  midas.targetutils.PerfCounter(can_fire_hella_incoming.reduce(_||_), "lsu_can_fire_hella_incoming", "lsu_can_fire_hella_incoming")
+  midas.targetutils.PerfCounter(can_fire_hella_wakeup.reduce(_||_), "lsu_can_fire_hella_wakeup", "lsu_can_fire_hella_wakeup")
+  // FIXME: Make these blocks named? Or at least describe them.
+  locally {
+      val idx = ldq_wakeup_idx
+      val e   = ldq_wakeup_e
+      val v   = e.valid && e.bits.addr.valid && !e.bits.executed && !e.bits.succeeded && !e.bits.addr_is_virtual
+      val wait_uncacheable = e.bits.addr_is_uncacheable && !(io.core.commit_load_at_rob_head && ldq_head === idx && e.bits.st_dep_mask.asUInt === 0.U)
+
+      timeline.trackState("lsu_sched.lqw", "valid", v, e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqw", "blocked_hazard", v && (p1_block_load_mask(idx) || p2_block_load_mask(idx)), e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqw", "blocked_store_order", v && store_needs_order, e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqw", "blocked_wakeup_logic", v && block_load_wakeup, e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqw", "blocked_uncacheable", v && wait_uncacheable, e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqw", "blocked_order_fail", v && e.bits.order_fail, e.bits.addr.bits)
+  }
+  locally {
+      val idx = ldq_retry_idx
+      val e   = ldq_retry_e
+      val v   = e.valid && e.bits.addr.valid && e.bits.addr_is_virtual
+      val block = p1_block_load_mask(idx) || p2_block_load_mask(idx)
+
+      timeline.trackState("lsu_sched.lqr", "valid", v, e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqr", "blocked_hazard", v && block, e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqr", "blocked_store_order", v && store_needs_order, e.bits.addr.bits)
+
+      val canFireVirtual = !is_handle(e.bits.addr.bits) && canFire(e.bits.addr_is_virtual, e.bits.addr.bits)
+      val canFireHandle  = is_handle(e.bits.addr.bits) && canFire(e.bits.addr_is_virtual, e.bits.addr.bits)
+
+      timeline.trackState("lsu_sched.lqr", "blocked_tlb_not_ready", v && !canFireVirtual, e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqr", "blocked_htlb_not_ready", v && !canFireHandle, e.bits.addr.bits)
+      timeline.trackState("lsu_sched.lqr", "blocked_order_fail", v && e.bits.order_fail, e.bits.addr.bits)
+  }
+
+
   //---------------------------------------------------------
   // Controller logic. Arbitrate which request actually fires
 
@@ -569,16 +670,21 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     var lcam_avail = true.B
     var rob_avail  = true.B
 
-    def lsu_sched(can_fire: Bool, uses_tlb:Boolean, uses_dc:Boolean, uses_lcam: Boolean, uses_rob:Boolean): Bool = {
+    def lsu_sched(name: String, can_fire: Bool, uses_tlb:Boolean, uses_dc:Boolean, uses_lcam: Boolean, uses_rob:Boolean): Bool = {
       val will_fire = can_fire && !(uses_tlb.B && !tlb_avail) &&
                                   !(uses_lcam.B && !lcam_avail) &&
                                   !(uses_dc.B && !dc_avail) &&
                                   !(uses_rob.B && !rob_avail)
+      // timeline.trackState("lsu_sched_res."+name, "dc", uses_dc.B && dc_avail)
+
       tlb_avail  = tlb_avail  && !(will_fire && uses_tlb.B)
       lcam_avail = lcam_avail && !(will_fire && uses_lcam.B)
       dc_avail   = dc_avail   && !(will_fire && uses_dc.B)
       rob_avail  = rob_avail  && !(will_fire && uses_rob.B)
       dontTouch(will_fire) // dontTouch these so we can inspect the will_fire signals
+      // timeline.trackState("lsu_sched_decisions." + name, "blocked", can_fire && !will_fire)
+      // timeline.trackState("lsu_sched_decisions." + name, "fired", can_fire && will_fire)
+
       will_fire
     }
 
@@ -718,6 +824,16 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     dtlb.io.req(w).bits.v           := io.ptw.status.v
     dtlb.io.req(w).bits.prv         := io.ptw.status.prv
     dtlb.io.req(w).bits.handle      := false.B
+
+    if (boomParams.enableStateTracing) {
+      when (dtlb.io.req(w).valid && htlb_enabled) {
+        midas.targetutils.SynthesizePrintf(printf("t(%d%d)%x,%d,%d,%d\n",
+          rocket.isRead(exe_cmd(w)), rocket.isWrite(exe_cmd(w)),
+          dtlb.io.req(w).bits.vaddr,
+          dtlb.io.req(w).bits.htlb_passthrough, dtlb.io.req(w).bits.passthrough,
+          dtlb.io.req(w).bits.handle))
+      }
+    }
   }
   dtlb.io.kill                      := exe_kill.reduce(_||_)
   dtlb.io.sfence                    := exe_sfence
@@ -744,6 +860,38 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     htlb.io.req(w).bits.cmd   := exe_cmd(w)
     /* TODO: Hook up passthrough bits correctly. */
     htlb.io.req(w).bits.passthrough := false.B
+    if (boomParams.enableHandleTracing) {
+      when (htlb.io.req(w).valid && !exe_htlb_passthr(w) && is_incoming(w)) {
+        midas.targetutils.SynthesizePrintf(printf("h%x,%d\n", htlb.io.req(w).bits.haddr, htlb.io.req(w).bits.passthrough))
+      }
+    }
+  }
+
+  midas.targetutils.PerfCounter(widthMap(w => exe_htlb_valid(w) && !exe_htlb_passthr(w)).reduce(_ || _), "l1_htlb_accesses_non_passthrough", "l1_htlb_accesses_non_passthrough")
+  midas.targetutils.PerfCounter(widthMap(w => exe_htlb_valid(w) && exe_htlb_passthr(w)).reduce(_ || _), "l1_htlb_accesses_passthrough", "l1_htlb_accesses_passthrough")
+  midas.targetutils.PerfCounter(widthMap(w => exe_htlb_valid(w)).reduce(_ || _), "l1_htlb_accesses", "l1_htlb_accesses")
+
+  for (i <- 0 until numLdqEntries) {
+    val h_hits = (0 until memWidth).map(w => htlb.io.req(w).valid && exe_tlb_uop(w).uses_ldq && exe_tlb_uop(w).ldq_idx === i.U)
+    val h_valid = h_hits.reduce(_||_)
+    val h_addr  = Mux1H(h_hits, (0 until memWidth).map(w => htlb.io.req(w).bits.haddr))
+    timeline.trackState(s"ldq.$i", "htlb_access", h_valid, h_addr)
+
+    val d_hits = (0 until memWidth).map(w => dtlb.io.req(w).valid && exe_tlb_uop(w).uses_ldq && exe_tlb_uop(w).ldq_idx === i.U)
+    val d_valid = d_hits.reduce(_||_)
+    val d_addr  = Mux1H(d_hits, (0 until memWidth).map(w => dtlb.io.req(w).bits.vaddr))
+    timeline.trackState(s"ldq.$i", "dtlb_access", d_valid, d_addr)
+  }
+  for (i <- 0 until numStqEntries) {
+    val h_hits = (0 until memWidth).map(w => htlb.io.req(w).valid && exe_tlb_uop(w).uses_stq && exe_tlb_uop(w).stq_idx === i.U)
+    val h_valid = h_hits.reduce(_||_)
+    val h_addr  = Mux1H(h_hits, (0 until memWidth).map(w => htlb.io.req(w).bits.haddr))
+    timeline.trackState(s"stq.$i", "htlb_access", h_valid, h_addr)
+
+    val d_hits = (0 until memWidth).map(w => dtlb.io.req(w).valid && exe_tlb_uop(w).uses_stq && exe_tlb_uop(w).stq_idx === i.U)
+    val d_valid = d_hits.reduce(_||_)
+    val d_addr  = Mux1H(d_hits, (0 until memWidth).map(w => dtlb.io.req(w).bits.vaddr))
+    timeline.trackState(s"stq.$i", "dtlb_access", d_valid, d_addr)
   }
 
   // exceptions
@@ -775,6 +923,14 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   // TODO: Add an assertion for the handle fault & page fault disjoint
   // Essentially, pf_ld & ha_ld and pf_st & ha_st are always disjoint.
+
+  // FIXME: Make this block read better.
+  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid && is_handle(exe_htlb_vaddr(w))).reduce(_ || _), "l1_dtlb_accesses_from_handle_translations", "l1_dtlb_accesses_from_handle_translations")
+  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_accesses", "l1_dtlb_accesses")
+  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid && dtlb.io.req(w).bits.passthrough && !dtlb.io.req(w).bits.htlb_passthrough).reduce(_ || _), "l1_dtlb_dtlb_passthrough", "l1_dtlb_dtlb_passthrough")
+  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid && !dtlb.io.req(w).bits.passthrough && dtlb.io.req(w).bits.htlb_passthrough).reduce(_ || _), "l1_dtlb_htlb_passthrough", "l1_dtlb_htlb_passthrough")
+  midas.targetutils.PerfCounter(widthMap(w => (will_fire_load_retry(w) || will_fire_sta_retry(w)) && dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_retries", "l1_dtlb_retries")
+  midas.targetutils.PerfCounter(widthMap(w => (will_fire_load_incoming(w) || will_fire_sta_incoming(w) || will_fire_stad_incoming(w) || will_fire_std_incoming(w)) && dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_incoming", "l1_dtlb_incoming")
 
   // TODO check for xcpt_if and verify that never happens on non-speculative instructions.
   val mem_xcpt_valids = RegNext(widthMap(w =>
@@ -841,6 +997,9 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
     when (mem_xcpt_valids(w))
     {
+      when (htlb_enabled) {
+        // midas.targetutils.SynthesizePrintf(printf("Te:%x,%x\n", exe_tlb_vaddr(w), exe_tlb_paddr(w)))
+      }
       assert(RegNext(will_fire_load_incoming(w) || will_fire_stad_incoming(w) || will_fire_sta_incoming(w) ||
         will_fire_load_retry(w) || will_fire_sta_retry(w)))
       // Technically only faulting AMOs need this
@@ -921,6 +1080,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   io.dmem.req.valid := dmem_req.map(_.valid).reduce(_||_)
   io.dmem.req.bits  := dmem_req
   val dmem_req_fire = widthMap(w => dmem_req(w).valid && io.dmem.req.fire)
+  timeline.trackState("dcache.memreq", "io.dmem.req.fire", io.dmem.req.fire)
+  timeline.trackState("dcache.memreq", "fire", dmem_req_fire.reduce(_||_))
 
   val s0_executing_loads = WireInit(VecInit((0 until numLdqEntries).map(x=>false.B)))
 
@@ -1034,7 +1195,9 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
       assert(!(will_fire_sta_incoming(w) && stq_incoming_e(w).bits.addr.valid),
         "[lsu] Incoming store is overwriting a valid address")
-
+      printf("stq_idx: %d, addr: %x, valid: %d, is_virtual: %d\n",
+        stq_idx, stq(stq_idx).bits.addr.bits, stq(stq_idx).bits.addr.valid,
+        stq(stq_idx).bits.addr_is_virtual)
     }
 
     //-------------------------------------------------------------
@@ -1229,6 +1392,11 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   val failed_loads     = WireInit(VecInit((0 until numLdqEntries).map(x=>false.B))) // Loads which we will report as failures (throws a mini-exception)
   val nacking_loads    = WireInit(VecInit((0 until numLdqEntries).map(x=>false.B))) // Loads which are being nacked by dcache in the next stage
+  for (i <- 0 until numLdqEntries) {
+    val track = "ldq." + i
+    timeline.trackState(track, "failed", failed_loads(i), ldq(i).bits.addr.bits)
+    timeline.trackState(track, "nacking", nacking_loads(i), ldq(i).bits.addr.bits)
+  }
 
   val s1_executing_loads = RegNext(s0_executing_loads)
   val s1_set_execute     = WireInit(s1_executing_loads)
@@ -1456,6 +1624,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   }
 
   val dmem_resp_fired = WireInit(widthMap(w => false.B))
+
+  midas.targetutils.PerfCounter(
+    io.dmem.perf.acquire && widthMap(w => io.dmem.nack(w).valid && io.dmem.nack(w).bits.is_hella).reduce(_ || _),
+    "dcache_hella_nacks",
+    "dcache_hella_nacks",
+  )
 
   for (w <- 0 until memWidth) {
     // Handle nacks
@@ -1765,6 +1939,44 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         hella_state := h_ready
       }
     }
+  }
+
+  //-------------------------------------------------------------
+  // LSU scheduler occupancy. These only observe state.
+  // will_fire counts operations that won the scheduler. A dcache op also needs
+  // io.dmem.req.ready to proceed; lsu_dmem_req_not_ready counts the cycles it does not.
+  // The description equals the label: thesis src/yukon/bench.py names result columns by description.
+  {
+    def count(name: String, v: Vec[Bool]) = midas.targetutils.PerfCounter(v.reduce(_||_), name, name)
+
+    count("lsu_will_fire_load_incoming",  will_fire_load_incoming)
+    count("lsu_will_fire_stad_incoming",  will_fire_stad_incoming)
+    count("lsu_will_fire_sta_incoming",   will_fire_sta_incoming)
+    count("lsu_will_fire_std_incoming",   will_fire_std_incoming)
+    count("lsu_will_fire_sfence",         will_fire_sfence)
+    count("lsu_will_fire_release",        will_fire_release)
+    count("lsu_will_fire_hella_incoming", will_fire_hella_incoming)
+    count("lsu_will_fire_hella_wakeup",   will_fire_hella_wakeup)
+    count("lsu_will_fire_load_retry",     will_fire_load_retry)
+    count("lsu_will_fire_sta_retry",      will_fire_sta_retry)
+    count("lsu_will_fire_load_wakeup",    will_fire_load_wakeup)
+    count("lsu_will_fire_store_commit",   will_fire_store_commit)
+    count("lsu_tlb_used",  exe_tlb_valid)
+    count("lsu_dc_used",   exe_dc_used)
+    count("lsu_lcam_used", exe_lcam_used)
+    // Ready ops that lost the scheduler this cycle.
+    count("lsu_lost_hella_incoming", VecInit((0 until memWidth).map(w => can_fire_hella_incoming(w) && !will_fire_hella_incoming(w))))
+    count("lsu_lost_load_retry",     VecInit((0 until memWidth).map(w => can_fire_load_retry(w)     && !will_fire_load_retry(w))))
+    count("lsu_lost_sta_retry",      VecInit((0 until memWidth).map(w => can_fire_sta_retry(w)      && !will_fire_sta_retry(w))))
+    count("lsu_lost_load_wakeup",    VecInit((0 until memWidth).map(w => can_fire_load_wakeup(w)    && !will_fire_load_wakeup(w))))
+    count("lsu_lost_store_commit",   VecInit((0 until memWidth).map(w => can_fire_store_commit(w)   && !will_fire_store_commit(w))))
+    midas.targetutils.PerfCounter(io.dmem.req.valid && !io.dmem.req.ready, "lsu_dmem_req_not_ready", "lsu_dmem_req_not_ready")
+    // Causes of hella s2_nack (h_s1 -> h_s2_nack): the scheduler or the dcache refused the request.
+    val hella_s1 = hella_state === h_s1 && !io.hellacache.s1_kill
+    val hella_s1_fired = will_fire_hella_incoming(memWidth-1)
+    midas.targetutils.PerfCounter(hella_s1 && !hella_s1_fired, "lsu_hella_s1_lost_sched", "lsu_hella_s1_lost_sched")
+    midas.targetutils.PerfCounter(hella_s1 && hella_s1_fired && !dmem_req_fire(memWidth-1),
+      "lsu_hella_s1_lost_dcache", "lsu_hella_s1_lost_dcache")
   }
 
   //-------------------------------------------------------------

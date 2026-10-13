@@ -129,6 +129,10 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val pht_enabled = Input(Bool())
   })
 
+  assert(implies(io.mem.req.valid,
+                 (io.mem.req.bits.addr & ((1.U << io.mem.req.bits.size)) - 1.U) === 0.U),
+    "[htlb] HellaCache request from HTLB is misaligned!")
+
   /* Ensure that when we receive a valid request, the payload (handle address)
    * is ACTUALLY a handle. */
   for (w <- 0 until memWidth) {

@@ -714,8 +714,10 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     dtlb.io.req(w).bits.size        := exe_size(w)
     dtlb.io.req(w).bits.cmd         := exe_cmd(w)
     dtlb.io.req(w).bits.passthrough := exe_passthr(w)
+    dtlb.io.req(w).bits.htlb_passthrough := false.B
     dtlb.io.req(w).bits.v           := io.ptw.status.v
     dtlb.io.req(w).bits.prv         := io.ptw.status.prv
+    dtlb.io.req(w).bits.handle      := false.B
   }
   dtlb.io.kill                      := exe_kill.reduce(_||_)
   dtlb.io.sfence                    := exe_sfence

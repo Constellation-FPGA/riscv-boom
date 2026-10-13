@@ -91,12 +91,16 @@ case class HTLBConfig(
 
 /** Handle Translation Lookaside Buffer.
  *
- * This functions similarly to the translation lookaside buffer (TLB) used for
- * virtual memory. Instead of handling virtual address pages, this operates on
- * and works with handles.
- *
  * This is an abstract class that describes how all HTLBs interface with other
  * modules.
+ *
+ * This functions similarly to the translation lookaside buffer (TLB) used for
+ * virtual memory. Instead of handling virtual address pages, this operates on
+ * and works with handles. HOWEVER, the HTLB receives BOTH handles and normal
+ * pointers! You (as the writer of an HTLB implementation) MUST pass those
+ * normal address pointers onto the TLB yourself, otherwise your virtual memory
+ * translation requests will never be translated.
+ *
  */
 abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
@@ -132,14 +136,6 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
   assert(implies(io.mem.req.valid,
                  (io.mem.req.bits.addr & ((1.U << io.mem.req.bits.size)) - 1.U) === 0.U),
     "[htlb] HellaCache request from HTLB is misaligned!")
-
-  /* Ensure that when we receive a valid request, the payload (handle address)
-   * is ACTUALLY a handle. */
-  for (w <- 0 until memWidth) {
-    val req = io.req(w)
-    assert(implies(req.fire, is_handle(req.bits.haddr)),
-      "[htlb] HTLB translation requests must have addresses be handles")
-  }
 }
 
 /** Handle Translation Lookaside Buffer that always produces handle faults.

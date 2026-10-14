@@ -16,6 +16,13 @@ import boom.v3.common._
 class HTLBReq(implicit p: Parameters) extends BoomBundle()(p) {
   val haddr = UInt(xLen.W)
   val cmd = Bits(rocket.M_SZ.W)
+  /** Should this request "passthrough" the HTLB and just return?
+   *
+   * Any passthrough request should be ignored by the HTLB and an [[HTLBResp]]
+   * immediately returned where [[HTLBResp.miss]] is false.B and
+   * [[HTLBResp.addr]] is the given address converted to a virtual address.
+   * */
+  val passthrough = Bool()
 }
 
 /** Exception types that the HTLB can raise for a handle fault.
@@ -35,16 +42,24 @@ class HTLBExceptions extends Bundle {
  * L1d$ (and therefore memory) to translate the handle.
  *
  * This will return the virtual address of the handle if the translation was
- * not a miss?
- *
- * If the handle is not present or an load/store was attempted with the wrong
- * access permissions on the handle, a handle fault will be raised. The kind of
- * handle fault is given by HTLBExceptions.
+ * not a miss.
  */
 class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
+  /** The address that corresponds to the handle given in the request.
+   * This may be a virtual address or a physical address, depending on the
+   * value of [[HTLBResp.phys]].
+   * If it is a virtual address, then it must go through page translation before
+   * the actual-requested memory operation happens. */
+  val addr = UInt(maxSVAddrBits.W)
   val miss = Bool()
-  val vaddr = UInt(vaddrBitsExtended.W)
+  /** If the handle is not present or an load/store was attempted with the wrong
+   * access permissions on the handle, a handle fault will be raised. The kind
+   * of handle fault is given by HTLBExceptions. */
   val handle_fault = new HTLBExceptions
+  /** States if [[HTLBResp.vaddr]] is already a physical address. */
+  val phys = Bool()
+  /** Entry is allowed to "try to upgrade" to a physical mapping. */
+  val try_phys = Bool()
 }
 
 /** Describes the configuration of an [[HTLB]].
@@ -104,7 +119,6 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
     val present = false.B
     val r_perm  = false.B
     val w_perm  = false.B
-    val vaddr   = 0.U(xLen.W)
 
     val cmd_read  = rocket.isRead(req.bits.cmd)
     val cmd_write = rocket.isWrite(req.bits.cmd)
@@ -113,15 +127,28 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
      * NOT a miss! A miss means that the handle was valid, but that the HTLB
      * has not previously (up to replacement policies) seen that handle and
      * therefore does not have the handle in its HTLB. */
-    io.resp(w).miss  := false.B
-    io.resp(w).vaddr := vaddr
+    io.resp(w).miss := false.B
+
+    val sum = io.req(w).bits.haddr
+    val ea_sign = Mux(
+      sum(vaddrBits - 1),
+      ~sum(63, vaddrBits) === 0.U,
+      sum(63, vaddrBits) =/= 0.U
+    )
+    val effective_address = Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
+
+    io.resp(w).addr := effective_address
+
+    /* TODO: Remove physical handle translation results! */
+    io.resp(w).phys := false.B
+    io.resp(w).try_phys := false.B
 
     /* NOTE: If a handle is marked as writable, then this block of hardware
      * will also IMPLICITLY treat it as readable.
      * This is generally the idea, because what good is a handle structure
      * that you can write to that you cannot read from? */
-    io.resp(w).handle_fault.ld := req.valid && cmd_read  && (!present || !r_perm)
-    io.resp(w).handle_fault.st := req.valid && cmd_write && (!present || !w_perm)
+    io.resp(w).handle_fault.ld := req.valid && is_handle(req.bits.haddr) && cmd_read  && (!present || !r_perm)
+    io.resp(w).handle_fault.st := req.valid && is_handle(req.bits.haddr) && cmd_write && (!present || !w_perm)
   }
 }
 

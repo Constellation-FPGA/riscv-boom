@@ -682,6 +682,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     htlb.io.req(w).valid      := exe_is_handle(w)
     htlb.io.req(w).bits.haddr := exe_tlb_vaddr(w)
     htlb.io.req(w).bits.cmd   := exe_cmd(w)
+    /* TODO: Hook up passthrough bits correctly. */
+    htlb.io.req(w).bits.passthrough := false.B
   }
 
   // exceptions

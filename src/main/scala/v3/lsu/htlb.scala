@@ -285,7 +285,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val data = UInt(new HTLBEntryData().getWidth.W)
     val valid = Bool()
 
-    def getData() = data.asTypeOf(new HTLBEntryData)
+    def getData(): HTLBEntryData = WireInit(data.asTypeOf(new HTLBEntryData))
     def hit(tag: UInt) = {
       valid && this.tag === tag
     }

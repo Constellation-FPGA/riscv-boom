@@ -305,7 +305,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     "dcache_miss",
   )
 
-  val htlb = Module(new FaultingHTLB(
+  val htlb = Module(new YukonHTLB(
     HTLBConfig(
       nSets = boomParams.nL1HTLBSets,
       nWays = boomParams.nL1HTLBWays,

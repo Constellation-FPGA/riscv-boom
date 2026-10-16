@@ -331,6 +331,65 @@ class WithCloneBoomTiles(
 })
 
 /**
+ * Debugging with Perfetto.
+ */
+
+class WithStateTracing extends Config((site, here, up) => {
+  case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
+    case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
+      enableStateTracing = true
+    )))
+  }
+})
+
+
+/**
+ * BOOM configurations for Yukon.
+ */
+
+class WithBoomHandleSupport extends Config((site, here, up) => {
+  case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
+    case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
+      usingHandles = true
+    )))
+    case other => other
+  }
+})
+
+class WithHTLBPhysAddr extends Config((site, here, up) => {
+  case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
+    case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
+      enableHTLBPhysAddr = true
+    )))
+  }
+})
+
+class WithBoomPHTSupport extends Config((site, here, up) => {
+  case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
+    case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
+      enablePHTSupport = true
+    )))
+    case other => other
+  }
+})
+
+class WithTwoStageHTW extends Config((site, here, up) => {
+  case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
+    case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
+      enableTwoStageHTW = true
+    )))
+  }
+})
+
+class WithHandleTracing extends Config((site, here, up) => {
+  case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
+    case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
+      enableHandleTracing = true
+    )))
+  }
+})
+
+/**
   * BOOM Configs for CS152 lab
   */
 class WithNCS152BaselineBooms(n: Int = 1) extends Config(

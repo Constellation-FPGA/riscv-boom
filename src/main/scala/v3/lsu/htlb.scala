@@ -380,15 +380,13 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // HTW: L0 Cache (Top Level Cache) Setup
   // Adapted from HTW.scala
   // We assume twoStageHTW is true for this simplified version with 2-stage
-  def getIndex(hid: UInt) = {
-    val hidL0 = hid >> htwL1Bits
-    hidL0(log2Ceil(boomParams.HTWCacheSize) - 1, 0)
+  def getEntry(hid: UInt) = {
+    val hidL0 = hid.head(htwL0Bits)
+    val splitL0TagIndexBits = log2Ceil(boomParams.HTWCacheSize)
+    Split(hidL0, log2Ceil(boomParams.HTWCacheSize))
   }
-  def getTag(hid: UInt) = {
-    val hidL0 = hid >> htwL1Bits
-    // FIXME: Remove magic -19. Replace with htwL1Bits+1 (30-12 + 1)
-    hidL0(handleBits - 19, log2Ceil(boomParams.HTWCacheSize))
-  }
+  def getTag(hid: UInt) = getEntry(hid)._1
+  def getIndex(hid: UInt) = getEntry(hid)._2
   val ht_directory_cache = {
     if (twoStageHTW)
       Some(
@@ -527,7 +525,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
           when(l0_hit) {
             l0_hit_in_s_ready := true.B
             inner_walk_base := l0_entry.data
-            walk_addr := l0_entry.data + (walk_hid(entries_per_ht_bits - 1, 0)) * 8.U
+            walk_addr := l0_entry.data + (walk_hid(htwL1Bits - 1, 0)) * 8.U
             io.mem.req.valid := true.B
             when(io.mem.req.fire) {
               midas.targetutils.SynthesizePrintf(
@@ -539,7 +537,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
               next_state := s_request_ht_entry
             }
           }.otherwise {
-            walk_addr := io.htBase + (walk_hid >> entries_per_ht_bits) * 8.U
+            walk_addr := io.htBase + (walk_hid >> htwL1Bits) * 8.U
             io.mem.req.valid := true.B
             when(io.mem.req.fire) {
               midas.targetutils.SynthesizePrintf(
@@ -568,7 +566,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       if (twoStageHTW) {
         // Request L0 entry from memory
         // Addr = htBase + (hid >> 18) * 8
-        walk_addr := io.htBase + (hid_req >> entries_per_ht_bits) * 8.U
+        walk_addr := io.htBase + (hid_req >> htwL1Bits) * 8.U
         io.mem.req.valid := true.B
 
         // Only advance state if the request actually fired
@@ -606,7 +604,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
           // Fast Path: Request Second Level immediately
           // Addr = mem_resp_data + (hid_req & mask) * 8
-          walk_addr := mem_resp_data + (hid_req(entries_per_ht_bits - 1, 0)) * 8.U
+          walk_addr := mem_resp_data + (hid_req(htwL1Bits - 1, 0)) * 8.U
           io.mem.req.valid := true.B
 
           when (io.mem.req.fire) {
@@ -632,7 +630,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       // mask for 18 bits = (1 << 18) - 1
       if (twoStageHTW) {
         walk_addr := inner_walk_base + (hid_req(
-          entries_per_ht_bits - 1,
+          htwL1Bits - 1,
           0
         )) * 8.U
       } else {

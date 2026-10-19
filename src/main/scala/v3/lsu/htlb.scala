@@ -381,19 +381,18 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // Adapted from HTW.scala
   val entries_per_ht_bits = 18
   // We assume twoStageHTW is true for this simplified version with 2-stage
-  val ht_directory_cache_size = boomParams.HTWCacheSize
   def getIndex(hid: UInt) =
-    (hid >> entries_per_ht_bits)(log2Ceil(ht_directory_cache_size) - 1, 0)
+    (hid >> entries_per_ht_bits)(log2Ceil(boomParams.HTWCacheSize) - 1, 0)
   def getTag(hid: UInt) = (hid >> entries_per_ht_bits)(
     handleBits - 19,
-    log2Ceil(ht_directory_cache_size)
+    log2Ceil(boomParams.HTWCacheSize)
   )
   val ht_directory_cache = {
     if (twoStageHTW)
       Some(
         RegInit(
           VecInit(
-            Seq.fill(ht_directory_cache_size)(0.U.asTypeOf(new TopLevelCacheEntry))
+            Seq.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry))
           )
         )
       )

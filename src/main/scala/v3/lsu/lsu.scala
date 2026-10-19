@@ -949,11 +949,11 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val hf_ld = widthMap(w => exe_is_handle(w) && htlb.io.resp(w).handle_fault.ld && exe_tlb_uop(w).uses_ldq && !htlb.io.resp(w).miss)
   val hf_st = widthMap(w => exe_is_handle(w) && htlb.io.resp(w).handle_fault.st && exe_tlb_uop(w).uses_stq && !htlb.io.resp(w).miss)
 
-  // There is no translated-handle path yet: a handle that doesn't fault would sit
-  // in the LDQ/STQ forever with addr.valid low and hang the ROB.
+  /* If there is an exception, then we should never mark BOTH a handle fault and
+   * a page fault for that entry. */
   for (w <- 0 until memWidth) {
-    assert(!exe_is_handle(w) || hf_ld(w) || hf_st(w),
-      "[lsu] Yukon: handle did not fault, but handle translation is not implemented")
+    assert((!(pf_ld(w) && hf_ld(w)) || !(pf_st(w) && hf_st(w))),
+      "[lsu] Svalbard: Received page fault AND handle fault for operation")
   }
 
   // TODO: Add an assertion for the handle fault & page fault disjoint

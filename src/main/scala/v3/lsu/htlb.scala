@@ -106,6 +106,7 @@ class TopLevelCacheEntry(implicit p: Parameters) extends BoomBundle()(p) {
 case class HTLBConfig(
   nSets: Int,
   nWays: Int,
+  pht_enabled: Boolean = true,
 )
 
 /** Handle Translation Lookaside Buffer.
@@ -148,8 +149,6 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val clear_htlb = Input(Bool())
     /** The size of the handle table in memory in bytes. */
     val htSize = Input(UInt(xLen.W))
-    /* FIXME: pht_enabled should be a construction-time flag. */
-    val pht_enabled = Input(Bool())
   })
 
   assert(implies(io.mem.req.valid,
@@ -172,13 +171,13 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
   /* Make all the connections to the HellaCache L1d$ that the HTW will need. */
   // IO assignments for walker
   io.mem.req.valid := false.B
-  io.mem.req.bits.phys := io.pht_enabled
+  io.mem.req.bits.phys := cfg.pht_enabled.B
   io.mem.req.bits.cmd := rocket.M_XRD
   io.mem.req.bits.size := log2Ceil(xBytes).U
   io.mem.req.bits.signed := false.B
   io.mem.req.bits.addr := walk_addr
   io.mem.req.bits.idx.foreach(_ := walk_addr)
-  io.mem.req.bits.dprv := Mux(io.pht_enabled, rocket.PRV.S.U, rocket.PRV.U.U)
+  io.mem.req.bits.dprv := { if (cfg.pht_enabled) rocket.PRV.S.U else rocket.PRV.U.U }
   io.mem.req.bits.dv := false.B
   io.mem.req.bits.tag := DontCare
   io.mem.req.bits.no_resp := false.B
@@ -417,13 +416,13 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   // IO assignments for walker
   io.mem.req.valid := false.B
-  io.mem.req.bits.phys := io.pht_enabled
+  io.mem.req.bits.phys := cfg.pht_enabled.B
   io.mem.req.bits.cmd := rocket.M_XRD
   io.mem.req.bits.size := log2Ceil(xBytes).U
   io.mem.req.bits.signed := false.B
   io.mem.req.bits.addr := walk_addr
   io.mem.req.bits.idx.foreach(_ := walk_addr)
-  io.mem.req.bits.dprv := Mux(io.pht_enabled, rocket.PRV.S.U, rocket.PRV.U.U)
+  io.mem.req.bits.dprv := { if (cfg.pht_enabled) rocket.PRV.S.U else rocket.PRV.U.U }
   io.mem.req.bits.dv := false.B
   io.mem.req.bits.tag := DontCare
   io.mem.req.bits.no_resp := false.B

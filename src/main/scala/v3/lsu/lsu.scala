@@ -309,13 +309,14 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     HTLBConfig(
       nSets = boomParams.nL1HTLBSets,
       nWays = boomParams.nL1HTLBWays,
+      // pht_enabled = enablePHTSupport,
+      pht_enabled = true,
     )
   ))
   io.htlb_mem <> htlb.io.mem
   htlb.io.clear_htlb := io.core.clear_htlb
   htlb.io.htInval := io.core.htInval
   io.core.htInvald := htlb.io.htInvald
-  htlb.io.pht_enabled := true.B
   htlb.io.htBase := io.core.htBase
   htlb.io.htSize := io.core.htSize
   htlb.io.htDump := io.core.htDump

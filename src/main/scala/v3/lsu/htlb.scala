@@ -400,9 +400,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       )
     else None
 
-  val l0_lookup_idx = getIndex(hid_req)
-  val l0_lookup_tag = getTag(hid_req)
-
   // Hoisted wire so htlb_l0_hit PerfCounter can reference it outside the s_ready block
   val l0_hit_in_s_ready = WireDefault(false.B)
 

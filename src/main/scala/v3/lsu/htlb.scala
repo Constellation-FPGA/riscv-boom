@@ -66,7 +66,7 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
 
 /** Response from the TLB for a handle translation.
  */
-class TLBHTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
+class TLBHandleResp(implicit p: Parameters) extends BoomBundle()(p) {
   /** The handle ID/number that this response is for. */
   val hid = UInt(handleBits.W)
   /** The physical address that this handle is currently backed by. */
@@ -127,7 +127,7 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val io = IO(new Bundle {
     val req = Flipped(Vec(memWidth, Decoupled(new HTLBReq)))
     val resp = Vec(memWidth, new HTLBResp)
-    val tlb = Flipped(Vec(memWidth, Valid(new TLBHTLBResp)))
+    val tlb = Flipped(Vec(memWidth, Valid(new TLBHandleResp)))
     val mem = new HellaCacheIO
     val kill = Input(Bool())
     /** Enable/Disable the HTLB and its state machinery.

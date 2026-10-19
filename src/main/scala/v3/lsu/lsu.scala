@@ -1055,7 +1055,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // The description equals the label: thesis src/yukon/bench.py names result columns by description.
   // HTLBSimple has one lookup port per lane and one walker; htlb.io.perf.walk_lane names the lane
   // whose miss started the walk.
-  {
+  locally {
     val htlb_rdy = RegNext(htlb.io.miss_rdy)
     val ld_handle_retry = ldq_retry_e.valid && ldq_retry_e.bits.addr.valid &&
                           ldq_retry_e.bits.addr_is_virtual && is_handle(ldq_retry_e.bits.addr.bits)
@@ -1992,7 +1992,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // will_fire counts operations that won the scheduler. A dcache op also needs
   // io.dmem.req.ready to proceed; lsu_dmem_req_not_ready counts the cycles it does not.
   // The description equals the label: thesis src/yukon/bench.py names result columns by description.
-  {
+  locally {
     def count(name: String, v: Vec[Bool]) = midas.targetutils.PerfCounter(v.reduce(_||_), name, name)
 
     count("lsu_will_fire_load_incoming",  will_fire_load_incoming)

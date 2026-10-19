@@ -389,7 +389,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     handleBits - 19,
     log2Ceil(ht_directory_cache_size)
   )
-  val ht_directory_cache =
+  val ht_directory_cache = {
     if (twoStageHTW)
       Some(
         RegInit(
@@ -399,6 +399,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         )
       )
     else None
+  }
 
   // Hoisted wire so htlb_l0_hit PerfCounter can reference it outside the s_ready block
   val l0_hit_in_s_ready = WireDefault(false.B)

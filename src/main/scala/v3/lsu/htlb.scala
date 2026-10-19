@@ -174,8 +174,7 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
   io.mem.req.valid := false.B
   io.mem.req.bits.phys := io.pht_enabled
   io.mem.req.bits.cmd := rocket.M_XRD
-  // FIXME: xBytes = xLen / 8
-  io.mem.req.bits.size := log2Ceil(xLen / 8).U
+  io.mem.req.bits.size := log2Ceil(xBytes).U
   io.mem.req.bits.signed := false.B
   io.mem.req.bits.addr := walk_addr
   io.mem.req.bits.idx.foreach(_ := walk_addr)
@@ -422,7 +421,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   io.mem.req.valid := false.B
   io.mem.req.bits.phys := io.pht_enabled
   io.mem.req.bits.cmd := rocket.M_XRD
-  io.mem.req.bits.size := log2Ceil(xLen / 8).U
+  io.mem.req.bits.size := log2Ceil(xBytes).U
   io.mem.req.bits.signed := false.B
   io.mem.req.bits.addr := walk_addr
   io.mem.req.bits.idx.foreach(_ := walk_addr)

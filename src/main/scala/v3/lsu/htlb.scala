@@ -148,6 +148,18 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
                            io.req(w).bits.passthrough)),
       cf"[htlb] Handle translation request for non-handle address ${io.req(w).bits.haddr} must be marked as passthrough")
   }
+
+  /* Requirements on HTLB responses for the given handle translation request. */
+  for (w <- 0 until memWidth) {
+    /* Is this response for a handle request? */
+    val resp_for_handle = io.htlb_enabled && io.req(w).valid &&
+      is_handle(io.req(w).bits.haddr) && !io.req(w).bits.passthrough
+
+    /* A handle translation request for something that does not "look like" a
+     * handle or is marked as passthrough must NEVER miss. */
+    assert(implies(!resp_for_handle, !io.resp(w).miss),
+      "[htlb] Non-handle request must response as a \"miss\"")
+  }
 }
 
 /** Handle Translation Lookaside Buffer that always produces handle faults.

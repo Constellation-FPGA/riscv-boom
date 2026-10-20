@@ -397,7 +397,11 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   def hid(haddr: UInt): UInt = {
     require(haddr.getWidth == 64,
       "Address/number to be used as handle must be 64 bits")
-    val id = haddr(xLen - 2, handleOffsetBits)
+    // Take off top 2 "magic" bits that identify handles, then -1 because
+    // slicing is inclusive on BOTH sides.
+    val id = haddr(xLen - 2 - 1, handleOffsetBits)
+    assert(id.getWidth == handleBits,
+      s"Handle ID is ${id.getWidth} bits wide, but must be handleBits=${handleBits} wide")
     return id
   }
 

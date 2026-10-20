@@ -207,13 +207,16 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
      * therefore does not have the handle in its HTLB. */
     io.resp(w).miss := false.B
 
-    val sum = io.req(w).bits.haddr
-    val ea_sign = Mux(
-      sum(vaddrBits - 1),
-      ~sum(63, vaddrBits) === 0.U,
-      sum(63, vaddrBits) =/= 0.U
-    )
-    val effective_address = Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
+    val effective_address = {
+      val sum = io.req(w).bits.haddr
+      val ea_sign = Mux(
+        sum(vaddrBits - 1),
+        ~sum(63, vaddrBits) === 0.U,
+        sum(63, vaddrBits) =/= 0.U
+      )
+
+      Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
+    }
 
     io.resp(w).addr := effective_address
 
@@ -652,13 +655,16 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       entries(hid_set(w))(OHToUInt(real_hits(w))).data.asTypeOf(new HTLBEntryData)
     val addr = entry_data.addr
 
-    val sum = io.req(w).bits.haddr
-    val ea_sign = Mux(
-      sum(vaddrBits - 1),
-      ~sum(63, vaddrBits) === 0.U,
-      sum(63, vaddrBits) =/= 0.U
-    )
-    val effective_address = Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
+    val effective_address = {
+      val sum = io.req(w).bits.haddr
+      val ea_sign = Mux(
+        sum(vaddrBits - 1),
+        ~sum(63, vaddrBits) === 0.U,
+        sum(63, vaddrBits) =/= 0.U
+      )
+
+      Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
+    }
 
     io.req(w).ready := true.B
     io.resp(w).miss := htlb_miss(w)

@@ -159,6 +159,11 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
      * handle or is marked as passthrough must NEVER miss. */
     assert(implies(!resp_for_handle, !io.resp(w).miss),
       "[htlb] Non-handle request must response as a \"miss\"")
+
+    /* Only translation requests for handles can produce handle faults. */
+    assert(implies(!resp_for_handle,
+                   !io.resp(w).handle_fault.ld && !io.resp(w).handle_fault.st),
+      "[htlb] Only translations requests for handles can produce handle faults")
   }
 }
 

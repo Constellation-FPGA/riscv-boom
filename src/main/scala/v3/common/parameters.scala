@@ -409,13 +409,17 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   def handle_offset(haddr: UInt): UInt = {
     require(haddr.getWidth == 64,
       "Address/number to be used as handle must be 64 bits")
-    val offset = haddr(handleOffsetBits, 0)
+    // -1 because slicing is inclusive on BOTH sides.
+    val offset = haddr(handleOffsetBits - 1, 0)
+    assert(offset.getWidth == handleOffsetBits,
+      s"Handle offset is ${offset.getWidth} bits wide but must be handleOffsetBits=${handleOffsetBits} wide")
     return offset
   }
 
   /* The Handle Table Walker (HTW) is a 2-level table.
    * The zeroth level is indexed by the top 12 bits of a handle ID and the first
    * level is indexed by the remaining bits (18 bits in this case). */
+  require(boomParams.enableTwoStageHTW, "The HTLB's HTW does not currently support single-level HTWs!")
   val htwL0Bits = 12
   val htwL1Bits = handleBits - htwL0Bits
 }

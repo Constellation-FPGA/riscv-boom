@@ -667,7 +667,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       !hm_enabled(w),
       effective_address,
       Mux(!io.resp(w).miss,
-        entry_data.addr + io.req(w).bits.haddr(handleOffsetBits - 1, 0),
+        entry_data.addr + handle_offset(io.req(w).bits.haddr),
         0.U
       )
     )

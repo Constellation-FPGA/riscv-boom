@@ -57,7 +57,7 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
    * value of [[HTLBResp.phys]].
    * If it is a virtual address, then it must go through page translation before
    * the actual-requested memory operation happens. */
-  val addr = UInt(maxSVAddrBits.W)
+  val addr = UInt(xLen.W)
   val miss = Bool()
   /** If the handle is not present or an load/store was attempted with the wrong
    * access permissions on the handle, a handle fault will be raised. The kind
@@ -260,7 +260,7 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
       Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
     }
 
-    io.resp(w).addr := effective_address
+    io.resp(w).addr := Mux(resp_for_handle, req.bits.haddr, effective_address)
 
     /* NOTE: If a handle is marked as writable, then this block of hardware
      * will also IMPLICITLY treat it as readable.

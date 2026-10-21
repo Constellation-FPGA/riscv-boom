@@ -1045,6 +1045,7 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
       Causes.fetch_page_fault.U,
       Causes.floating_point.U,
       Causes.instruction_step.U,
+      Causes.handle_fault.U,
     )
 
   csr.io.tval := Mux(tval_valid,

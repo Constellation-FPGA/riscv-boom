@@ -377,8 +377,12 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
    * are 30-bits.*/
   val handleBits: Int = xLen - 2 - handleOffsetBits
 
-  /**
-    * Return true.B if ADDR is a handle, otherwise return false.B.
+  /** Return true.B if ADDR "looks like" a handle, otherwise return false.B.
+    *
+    * We say "looks like" because it is possible to construct a UInt that
+    * matches the requirements we place on handles but does NOT correspond to
+    * any handle. In such a scenario, this function will return true.B despite
+    * the provided UInt not actually being a handle.
     *
     * @param addr Virtual address of a handle as a 64-bit number, before handle
     * translation.

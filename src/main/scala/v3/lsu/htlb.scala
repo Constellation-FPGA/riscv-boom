@@ -20,6 +20,11 @@ class HTLBReq(implicit p: Parameters) extends BoomBundle()(p) {
   val cmd = Bits(rocket.M_SZ.W)
   /** Should this request "passthrough" the HTLB and just return?
    *
+   * This is used for translation requests that go to the HTLB for addresses
+   * ([[HTLBReq.haddr]]) that are virtual addresses and NOT actually handles.
+   * This is set up this way because of how Yukon needs to interoperate with
+   * BOOM's LSU and the TLB.
+   *
    * Any passthrough request should be ignored by the HTLB and an [[HTLBResp]]
    * immediately returned where [[HTLBResp.miss]] is false.B and
    * [[HTLBResp.addr]] is the given address converted to a virtual address.

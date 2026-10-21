@@ -138,6 +138,16 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
   assert(implies(io.mem.req.valid,
                  (io.mem.req.bits.addr & ((1.U << io.mem.req.bits.size)) - 1.U) === 0.U),
     "[htlb] HellaCache request from HTLB is misaligned!")
+
+  /* Requirements on HTLB requests. */
+  for (w <- 0 until memWidth) {
+    /* If the HTLB is on and we get a valid request, check that the requests
+     * fields are sane. */
+    assert(implies(io.htlb_enabled && io.req(w).valid,
+                   implies(!is_handle(io.req(w).bits.haddr),
+                           io.req(w).bits.passthrough)),
+      cf"[htlb] Handle translation request for non-handle address ${io.req(w).bits.haddr} must be marked as passthrough")
+  }
 }
 
 /** Handle Translation Lookaside Buffer that always produces handle faults.

@@ -1056,11 +1056,10 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
     if (vaddrBitsExtended == vaddrBits) {
       ea
     } else {
-      // Efficient means to compress 64-bit VA into vaddrBits+1 bits.
-      // (VA is bad if VA(vaddrBits) != VA(vaddrBits-1)).
-      val a = a0.asSInt >> vaddrBits
-      val msb = Mux(a === 0.S || a === -1.S, ea(vaddrBits), !ea(vaddrBits-1))
-      Cat(msb, ea(vaddrBits-1,0))
+      /* The xTVAL CSRs are now xLen wide, so we no longer need to encode a
+       * 64-bit virtual address into an sv39-compatible (vaddrBits+1=40 bits)
+       * format. */
+      ea
     }
 
   // reading requires serializing the entire pipeline

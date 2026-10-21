@@ -233,10 +233,20 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
     val cmd_read  = rocket.isRead(req.bits.cmd)
     val cmd_write = rocket.isWrite(req.bits.cmd)
 
+    /* Is this response for a handle request? */
+    val resp_for_handle = io.htlb_enabled && req.valid &&
+      is_handle(req.bits.haddr) && !req.bits.passthrough
+
     /* Despite this module always returning a handle fault, a handle fault is
      * NOT a miss! A miss means that the handle was valid, but that the HTLB
      * has not previously (up to replacement policies) seen that handle and
-     * therefore does not have the handle in its HTLB. */
+     * therefore does not have the handle in its HTLB. Because this HTLB will
+     * always raise a handle fault, this module can also NEVER miss.
+     *
+     * If we receive a request for a virtual address and not a handle, that is
+     * denoted as a passthrough request. We cannot miss, since by definition
+     * the translation request was not for a handle, and we instead just return
+     * the virtual address. */
     io.resp(w).miss := false.B
 
     val effective_address = {
@@ -256,8 +266,8 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
      * will also IMPLICITLY treat it as readable.
      * This is generally the idea, because what good is a handle structure
      * that you can write to that you cannot read from? */
-    io.resp(w).handle_fault.ld := req.valid && is_handle(req.bits.haddr) && cmd_read  && (!present || !r_perm)
-    io.resp(w).handle_fault.st := req.valid && is_handle(req.bits.haddr) && cmd_write && (!present || !w_perm)
+    io.resp(w).handle_fault.ld := resp_for_handle && cmd_read  && (!present || !r_perm)
+    io.resp(w).handle_fault.st := resp_for_handle && cmd_write && (!present || !w_perm)
   }
 }
 

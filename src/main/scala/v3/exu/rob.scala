@@ -186,7 +186,7 @@ class Exception(implicit p: Parameters) extends BoomBundle
 {
   val uop = new MicroOp()
   val cause = Bits(log2Ceil(freechips.rocketchip.rocket.Causes.all.max+2).W)
-  val badvaddr = UInt(coreMaxAddrBits.W)
+  val badvaddr = UInt(xLen.W)
   val fflags = Bits(freechips.rocketchip.tile.FPConstants.FLAGS_SZ.W)
 }
 
@@ -258,7 +258,7 @@ class Rob(
   // TODO compress xcpt cause size. Most bits in the middle are zero.
   val r_xcpt_val       = RegInit(false.B)
   val r_xcpt_uop       = Reg(new MicroOp())
-  val r_xcpt_badvaddr  = Reg(UInt(coreMaxAddrBits.W))
+  val r_xcpt_badvaddr  = Reg(UInt(xLen.W))
   val r_xcpt_fp_xcpt   = RegInit(false.B)
   val r_xcpt_fp_fflags = Reg(UInt(freechips.rocketchip.tile.FPConstants.FLAGS_SZ.W))
   io.flush_frontend := r_xcpt_val
@@ -757,7 +757,7 @@ class Rob(
         r_xcpt_val              := true.B
         next_xcpt_uop           := new_xcpt.uop
         next_xcpt_uop.exc_cause := new_xcpt.cause
-        r_xcpt_badvaddr         := new_xcpt.badvaddr
+        r_xcpt_badvaddr         := Sext(new_xcpt.badvaddr, xLen)
         /* While we register the exception, we ALSO mark whether or not this was
          * an FP exception. This was an FP exception if any of the fflags changed
          * that we should care about.
@@ -774,7 +774,7 @@ class Rob(
       // if no exception yet, dispatch exception wins
       r_xcpt_val      := true.B
       next_xcpt_uop   := io.enq_uops(idx)
-      r_xcpt_badvaddr := AlignPCToBoundary(io.xcpt_fetch_pc, icBlockBytes) | io.enq_uops(idx).pc_lob
+      r_xcpt_badvaddr := Sext(AlignPCToBoundary(io.xcpt_fetch_pc, icBlockBytes) | io.enq_uops(idx).pc_lob, xLen)
       /* Dispatch exceptions inherently cannot be FP exceptions, because
        * dispatch exceptions are thrown by the front-end (misaligned inst.
        * address, or illegal instruction). */

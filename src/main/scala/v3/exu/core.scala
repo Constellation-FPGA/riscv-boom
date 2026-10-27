@@ -1049,19 +1049,7 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
     )
 
   csr.io.tval := Mux(tval_valid,
-    RegNext(encodeVirtualAddress(rob.io.com_xcpt.bits.badvaddr, rob.io.com_xcpt.bits.badvaddr)), 0.U)
-
-  // TODO move this function to some central location (since this is used elsewhere).
-  def encodeVirtualAddress(a0: UInt, ea: UInt) =
-    if (vaddrBitsExtended == vaddrBits) {
-      ea
-    } else {
-      // Efficient means to compress 64-bit VA into vaddrBits+1 bits.
-      // (VA is bad if VA(vaddrBits) != VA(vaddrBits-1)).
-      val a = a0.asSInt >> vaddrBits
-      val msb = Mux(a === 0.S || a === -1.S, ea(vaddrBits), !ea(vaddrBits-1))
-      Cat(msb, ea(vaddrBits-1,0))
-    }
+    RegNext(rob.io.com_xcpt.bits.badvaddr), 0.U)
 
   // reading requires serializing the entire pipeline
   /* If an FP instruction raises an exception, it does not tecnically commit,

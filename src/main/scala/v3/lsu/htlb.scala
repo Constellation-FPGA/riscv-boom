@@ -260,7 +260,35 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
       Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
     }
 
-    io.resp(w).addr := Mux(resp_for_handle, req.bits.haddr, effective_address)
+    // These are bit patterns, not UInts, but this is the easiest way to make
+    // the type system happy right now.
+    val HANDLE_FAULT_LD = "b00".U
+    val HANDLE_FAULT_ST = "b01".U
+    def handle_fault_haddr_resp(haddr: UInt): UInt = {
+      require(haddr.getWidth == 64)
+      val fault_haddr = WireInit(0.U(xLen.W))
+      // TODO: All commented-out code blocks in here can be re-enabled when
+      // there is a boolean controlling if we should even be generating a
+      // response, i.e., the resp_for_handle boolean would be passed into here.
+      //
+      // The ## and Cat methods are the same here. KGH just wanted documentation
+      // on 2 ways to achieve the same thing until this gets unified behind some
+      // kind of useful abstraction.
+      when (cmd_read) {
+        fault_haddr := HANDLE_FAULT_LD ## haddr.tail(2)
+      } .elsewhen (cmd_write) {
+        fault_haddr := Cat(HANDLE_FAULT_ST, haddr(61, 0))
+      }//  .otherwise {
+      //   assert(false.B, "Handle command was NEITHER load nor store!")
+      // }
+      require(fault_haddr.getWidth == 64, "Modified faulting haddr must be xLen wide")
+      // assert(fault_haddr =/= 0.U, "Impossible handle fault on address 0x0")
+      fault_haddr
+    }
+
+    io.resp(w).addr := Mux(resp_for_handle,
+      handle_fault_haddr_resp(req.bits.haddr),
+      effective_address)
 
     /* NOTE: If a handle is marked as writable, then this block of hardware
      * will also IMPLICITLY treat it as readable.

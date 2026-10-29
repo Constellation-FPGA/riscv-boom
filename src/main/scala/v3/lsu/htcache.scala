@@ -56,7 +56,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     private val tagBits = handleBits - idxBits
 
     val tag = UInt(tagBits.W)
-    val data = UInt(new HTLBEntryData().getWidth.W)
+    val data = new HTLBEntryData()
     val valid = Bool()
 
     def hit(tag: UInt) = { valid && this.tag === tag }
@@ -64,7 +64,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     def insert(tag: UInt, entry: HTLBEntryData) = {
       this.tag := tag
       valid := true.B
-      data := entry.asUInt
+      data := entry
     }
 
     def invalidate() = { valid := false.B }

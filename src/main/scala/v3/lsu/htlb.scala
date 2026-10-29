@@ -401,10 +401,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val state = RegInit(s_ready)
   val next_state = WireDefault(state)
 
-
-
-
-
   // XXX: must use RegNext here to break the combinational path
   //      io.mem.resp.valid → io.mem.req.valid that exists in s_wait_ht_directory.
   //      Without this register, MIDAS's token model deadlocks at cycle 3.
@@ -490,7 +486,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   timeline.trackState("htlb.state", "mem_resp", io.mem.resp.valid)
   timeline.trackState("htlb.state", "retry_nack", io.mem.s2_nack)
 
-
   // Consider the number of times the HTLB is not ready (that is, it is dealing with a miss, blocking the LSU)
   midas.targetutils.PerfCounter(state =/= s_ready, "htlb_waiting", "htlb_waiting")
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
@@ -505,7 +500,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       timeline.trackState(s"htlb.s${s}w${w}", "invalid", !e.valid, e.tag)
     }
   }
-
 
   // Fill target. Hoisted out of s_wait_ht_entry so the PerfCounters can see the victim.
   val (r_tag, r_idx) = Split(hid_req, idxBits)
@@ -534,9 +528,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     (0 until memWidth).map(w => Pipe(plru_hit(w), OHToUInt(real_hits(w)), 0)) :+ Pipe(plru_fill, repl_way, 0))
 
   switch(state) {
-
-
-
     is(s_ready) {
       // Prioritize invalidation over handling a miss
       when(do_htInval) {
@@ -585,7 +576,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
             }
           }
         } else {
-          walk_addr := io.htBase + walk_hid * 8.U
+          walk_addr := io.htBase + (walk_hid * 8.U)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
             next_state := s_wait_ht_entry
@@ -595,7 +586,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         }
       }
     }
-
 
     is(s_request_ht_directory) {
       if (twoStageHTW) {
@@ -616,8 +606,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         }
       }
     }
-
-
 
     is(s_wait_ht_directory) {
       if (twoStageHTW) {
@@ -647,7 +635,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
           } .otherwise {
             next_state := s_request_ht_entry
           }
-
         }.elsewhen(io.mem.s2_nack) {
           next_state := s_request_ht_directory
         }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
@@ -655,8 +642,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         }
       }
     }
-
-
 
     is(s_request_ht_entry) {
       // Request Inner Entry (HTE)
@@ -672,7 +657,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       }
 
       io.mem.req.valid := true.B
-
       when(io.mem.req.fire) {
         midas.targetutils.SynthesizePrintf(
           printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x\n",
@@ -681,8 +665,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         next_state := s_wait_ht_entry
       }
     }
-
-
 
     is(s_wait_ht_entry) {
       when(mem_resp_valid) {
@@ -702,9 +684,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         next_state := s_request_ht_entry
       }
     }
-
-
-
   }
 
   // Disable blocks new memory requests, but does not cancel accepted requests.
@@ -791,7 +770,6 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       //     cache(l0_idx).valid := false.B
       //   }
       // }
-
     }
   }
 

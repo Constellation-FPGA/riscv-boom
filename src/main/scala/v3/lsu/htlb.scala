@@ -6,7 +6,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.rocket
 import freechips.rocketchip.rocket.HellaCacheIO
-import freechips.rocketchip.util.{SetAssocLRU, Split}
+import freechips.rocketchip.util.Split
 
 import boom.v3.common._
 
@@ -72,30 +72,12 @@ class HTLBPerfIO extends Bundle {
   val fill       = Bool()
 }
 
-/** A Handle Table Entry
- */
-class HTE(implicit p: Parameters) extends BoomBundle()(p) {
-  val reserved = UInt((64 - maxSVAddrBits).W)
-  val addr = UInt(maxSVAddrBits.W) // Virtual object base; upper bits are ignored.
-}
-
-/** TODO: Document this.
- * ???
- */
-class TopLevelCacheEntry(implicit p: Parameters) extends BoomBundle()(p) {
-  val valid = Bool()
-  val tag = UInt(htwL1Bits.W)
-  val data = UInt(maxSVAddrBits.W)     // Store the base address for inner walks
-}
-
 /** Describes the configuration of an [[HTLB]].
  *
- * @param nSets The number of sets available inside this HTLB.
- * @param nWays The number of ways available inside each set. Each way is identical.
+ * @param pht_enabled True if the address in the htBase CSR is physical.
+ * @param htCacheCfg The Handle Table Cache ([[HTCacheConfig]]) configuration.
  */
 case class HTLBConfig(
-  nSets: Int,
-  nWays: Int,
   pht_enabled: Boolean = true,
 )
 
@@ -333,39 +315,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val s_wait_ht_entry = Value
   }
 
-  // ------------------------------------------------------------------------------------------------
-  // ------------------------------------------------------------------------------------------------
-  // Data Structures
-  // ------------------------------------------------------------------------------------------------
-  // ------------------------------------------------------------------------------------------------
-
   // The lookup and the walker serve lane 0 only.
   require(memWidth == 1, s"HTLBSimple supports memWidth == 1 only, not $memWidth")
-
-  class HTLBEntryData() extends Bundle() {
-    val addr = UInt(maxSVAddrBits.W) // Virtual object base.
-  }
-
-  class Entry(nSets: Int) extends Bundle {
-    val idxBits = log2Ceil(nSets)
-    val tagBits = handleBits - idxBits
-    val tag = UInt(tagBits.W)
-    val data = UInt(new HTLBEntryData().getWidth.W)
-    val valid = Bool()
-
-    def hit(tag: UInt) = {
-      valid && this.tag === tag
-    }
-
-    def insert(tag: UInt, entry: HTLBEntryData) = {
-      this.tag := tag
-
-      valid := true.B
-      data := entry.asUInt
-    }
-
-    def invalidate() = { valid := false.B }
-  }
 
   for (w <- 0 until memWidth) {
     io.resp(w).handle_fault.ld := false.B
@@ -380,21 +331,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
   val hm_enabled = widthMap(w => !io.req(w).bits.passthrough)
   val hids = widthMap(w => io.req(w).bits.haddr.hid)
-  val idxBits = log2Ceil(cfg.nSets)
-
-  // L1 TLB Entries
-  val entries = Reg(Vec(cfg.nSets, Vec(cfg.nWays, new Entry(cfg.nSets))))
-
-  val l1_plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
 
   // Hit Logic (per lane)
-  // TODO: Just change rocket.Split to split a Bit instead of UInt?
-  def hidSplit(hid: HID, idx: Int) = {
-    val w = hid.id.getWidth
-    (hid.id(w-1, idx), hid.id(idx-1, 0))
-  }
-  val hid_tag = widthMap(w => hidSplit(hids(w), idxBits)._1)
-  val hid_set = widthMap(w => hidSplit(hids(w), idxBits)._2)
   val real_hits = widthMap(w => VecInit(entries(hid_set(w)).map(hm_enabled(w) && _.hit(hid_tag(w)))).asUInt)
   val htlb_hit = widthMap(w => real_hits(w).orR)
   val htlb_miss = widthMap(w => hm_enabled(w) && !htlb_hit(w))
@@ -507,13 +445,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(state === YukonState.s_request_ht_directory || state === YukonState.s_request_ht_entry, "htlb_mem_stall_cycles", "htlb_mem_stall_cycles")
   midas.targetutils.PerfCounter(any_miss && l0_hit_in_s_ready, "htlb_l0_hit", "htlb_l0_hit")
   midas.targetutils.PerfCounter(state === YukonState.s_wait_ht_directory || state === YukonState.s_wait_ht_entry, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
-
-  for (s <- 0 until cfg.nSets) {
-    for (w <- 0 until cfg.nWays) {
-      val e = entries(s)(w)
-      timeline.trackState(s"htlb.s${s}w${w}", "invalid", !e.valid, e.tag)
-    }
-  }
 
   // Fill target. Hoisted out of s_wait_ht_entry so the PerfCounters can see the victim.
   val (r_tag, r_idx) = hidSplit(hid_req, idxBits)

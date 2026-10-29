@@ -319,6 +319,19 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   */
 final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     extends HTLB(cfg)(p) {
+  object YukonState extends ChiselEnum {
+    /** Ready. Waiting for a miss to start the state machine. */
+    val s_ready = Value
+    /** Read cache, or issue a request for the HT directory entry. */
+    val s_request_ht_directory = Value
+    /** Wait for the HT directory entry to return. */
+    val s_wait_ht_directory = Value
+    /** Read cache, or issue a request for the HT entry. */
+    val s_request_ht_entry = Value
+    /** Wait for the HT entry to return. Refill when done. */
+    val s_wait_ht_entry = Value
+  }
+
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------
   // Data Structures
@@ -399,13 +412,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val hid_req = Reg(new HID())
 
   // State Machine
-  // - ready: idle, waiting for a miss.
-  // - request_ht_directory: read cache, or issue a request for the HT directory entry
-  // - wait_ht_directory: wait for the HT directory entry to return
-  // - request_ht_entry: read cache, or issue a request for the HT entry
-  // - wait_ht_entry: wait for the HT entry to return. Refill when done.
-  val s_ready :: s_request_ht_directory :: s_wait_ht_directory :: s_request_ht_entry :: s_wait_ht_entry :: Nil = Enum(5)
-  val state = RegInit(s_ready)
+  val state = RegInit(YukonState.s_ready)
   val next_state = WireDefault(state)
 
   // XXX: must use RegNext here to break the combinational path
@@ -443,7 +450,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   // htInval is a CSR that software writes to request an invalidation.
   // The CSR clears itself when hrInvald asserts, so we don't need pulse logic.
-  val do_htInval = (state === s_ready) && io.htInval.orR
+  val do_htInval = (state === YukonState.s_ready) && io.htInval.orR
   val inval_all  = io.htInval === Fill(handleBits, 1.B)
 
   // Memory Request Construction
@@ -475,30 +482,30 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   io.mem.uncached_resp.foreach(_.ready := true.B)
 
   // FSM Implementation
-  state := Mux(io.htlb_enabled, next_state, s_ready)
-  when(!io.htlb_enabled && state =/= s_ready) {
+  state := Mux(io.htlb_enabled, next_state, YukonState.s_ready)
+  when(!io.htlb_enabled && state =/= YukonState.s_ready) {
     midas.targetutils.SynthesizePrintf(
       printf("HTLB.disabled: cycle=%d state=%d flushed to s_ready\n",
-        timeline.cycle, state)
+        timeline.cycle, state.asUInt)
     )
   }
 
-  timeline.trackState("htlb.state", "request_ht_directory", state === s_request_ht_directory)
-  timeline.trackState("htlb.state", "wait_ht_directory", state === s_wait_ht_directory)
-  timeline.trackState("htlb.state", "request_ht_entry", state === s_request_ht_entry)
-  timeline.trackState("htlb.state", "wait_ht_entry", state === s_wait_ht_entry)
+  timeline.trackState("htlb.state", "request_ht_directory", state === YukonState.s_request_ht_directory)
+  timeline.trackState("htlb.state", "wait_ht_directory", state === YukonState.s_wait_ht_directory)
+  timeline.trackState("htlb.state", "request_ht_entry", state === YukonState.s_request_ht_entry)
+  timeline.trackState("htlb.state", "wait_ht_entry", state === YukonState.s_wait_ht_entry)
 
   timeline.trackState("htlb.state", "mem_req", io.mem.req.valid)
   timeline.trackState("htlb.state", "mem_resp", io.mem.resp.valid)
   timeline.trackState("htlb.state", "retry_nack", io.mem.s2_nack)
 
   // Consider the number of times the HTLB is not ready (that is, it is dealing with a miss, blocking the LSU)
-  midas.targetutils.PerfCounter(state =/= s_ready, "htlb_waiting", "htlb_waiting")
+  midas.targetutils.PerfCounter(state =/= YukonState.s_ready, "htlb_waiting", "htlb_waiting")
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
   midas.targetutils.PerfCounter(PopCount(widthMap(w => io.req(w).fire && htlb_hit(w) && hm_enabled(w))), "htlb_hit", "htlb_hit")
-  midas.targetutils.PerfCounter(state === s_request_ht_directory || state === s_request_ht_entry, "htlb_mem_stall_cycles", "htlb_mem_stall_cycles")
+  midas.targetutils.PerfCounter(state === YukonState.s_request_ht_directory || state === YukonState.s_request_ht_entry, "htlb_mem_stall_cycles", "htlb_mem_stall_cycles")
   midas.targetutils.PerfCounter(any_miss && l0_hit_in_s_ready, "htlb_l0_hit", "htlb_l0_hit")
-  midas.targetutils.PerfCounter(state === s_wait_ht_directory || state === s_wait_ht_entry, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
+  midas.targetutils.PerfCounter(state === YukonState.s_wait_ht_directory || state === YukonState.s_wait_ht_entry, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
 
   for (s <- 0 until cfg.nSets) {
     for (w <- 0 until cfg.nWays) {
@@ -528,13 +535,13 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // the next fill in the set does not evict it before the retry. access()
   // applies the updates in order: lane 0, lane 1, ..., then the fill last.
   val plru_hit  = widthMap(w => io.req(w).valid && hm_enabled(w) && real_hits(w).orR)
-  val plru_fill = state === s_wait_ht_entry && mem_resp_valid
+  val plru_fill = state === YukonState.s_wait_ht_entry && mem_resp_valid
   l1_plru.access(
     hid_set :+ r_idx,
     (0 until memWidth).map(w => Pipe(plru_hit(w), OHToUInt(real_hits(w)), 0)) :+ Pipe(plru_fill, repl_way, 0))
 
   switch(state) {
-    is(s_ready) {
+    is(YukonState.s_ready) {
       // Prioritize invalidation over handling a miss
       when(do_htInval) {
       } .elsewhen(any_miss) {
@@ -564,9 +571,9 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
                 printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x (L0 hit)\n",
                   timeline.cycle, walk_hid.id, walk_addr)
               )
-              next_state := s_wait_ht_entry
+              next_state := YukonState.s_wait_ht_entry
             }.otherwise {
-              next_state := s_request_ht_entry
+              next_state := YukonState.s_request_ht_entry
             }
           }.otherwise {
             walk_addr := io.htBase + hidL0(walk_hid) * 8.U
@@ -576,24 +583,24 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
                 printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
                   timeline.cycle, walk_hid.id, walk_addr)
               )
-              next_state := s_wait_ht_directory
+              next_state := YukonState.s_wait_ht_directory
             }.otherwise {
-              next_state := s_request_ht_directory
+              next_state := YukonState.s_request_ht_directory
             }
           }
         } else {
           walk_addr := Handle.toAddr(walk_hid, io.htBase)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
-            next_state := s_wait_ht_entry
+            next_state := YukonState.s_wait_ht_entry
           }.otherwise {
-            next_state := s_request_ht_entry
+            next_state := YukonState.s_request_ht_entry
           }
         }
       }
     }
 
-    is(s_request_ht_directory) {
+    is(YukonState.s_request_ht_directory) {
       if (twoStageHTW) {
         // Request L0 entry from memory
         // Addr = htBase + (hidL0 * 8)
@@ -608,12 +615,12 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
                 timeline.cycle, hid_req.id, walk_addr)
             )
           // }
-          next_state := s_wait_ht_directory
+          next_state := YukonState.s_wait_ht_directory
         }
       }
     }
 
-    is(s_wait_ht_directory) {
+    is(YukonState.s_wait_ht_directory) {
       if (twoStageHTW) {
         // Wait for outer walk response
         when(mem_resp_valid) {
@@ -637,19 +644,19 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
           io.mem.req.valid := true.B
 
           when (io.mem.req.fire) {
-            next_state := s_wait_ht_entry
+            next_state := YukonState.s_wait_ht_entry
           } .otherwise {
-            next_state := s_request_ht_entry
+            next_state := YukonState.s_request_ht_entry
           }
         }.elsewhen(io.mem.s2_nack) {
-          next_state := s_request_ht_directory
+          next_state := YukonState.s_request_ht_directory
         }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
-          next_state := s_request_ht_directory
+          next_state := YukonState.s_request_ht_directory
         }
       }
     }
 
-    is(s_request_ht_entry) {
+    is(YukonState.s_request_ht_entry) {
       // Request Inner Entry (HTE)
       // Addr = inner_walk_base + (hid & mask) * 8
       // mask for 18 bits = (1 << 18) - 1
@@ -665,11 +672,11 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
           printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x\n",
             timeline.cycle, hid_req.id, walk_addr)
         )
-        next_state := s_wait_ht_entry
+        next_state := YukonState.s_wait_ht_entry
       }
     }
 
-    is(s_wait_ht_entry) {
+    is(YukonState.s_wait_ht_entry) {
       when(mem_resp_valid) {
         // Insert into L1 entries at valid hid_req
         // No victim handling needed for simplificaiton, just overwrite
@@ -679,12 +686,12 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
         entries(r_idx)(repl_way).insert(r_tag, newEntry)
 
-        next_state := s_ready
+        next_state := YukonState.s_ready
 
       }.elsewhen(io.mem.s2_nack) {
-        next_state := s_request_ht_entry
+        next_state := YukonState.s_request_ht_entry
       }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
-        next_state := s_request_ht_entry
+        next_state := YukonState.s_request_ht_entry
       }
     }
   }
@@ -700,7 +707,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------
 
-  io.miss_rdy := state === s_ready
+  io.miss_rdy := state === YukonState.s_ready
 
   for (w <- 0 until memWidth) {
     val entry_data =
@@ -785,9 +792,9 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------
 
-  val walk_start = state === s_ready && io.htlb_enabled && !do_htInval && any_miss
-  val fill       = state === s_wait_ht_entry && mem_resp_valid
-  val waiting    = state =/= s_ready
+  val walk_start = state === YukonState.s_ready && io.htlb_enabled && !do_htInval && any_miss
+  val fill       = state === YukonState.s_wait_ht_entry && mem_resp_valid
+  val waiting    = state =/= YukonState.s_ready
 
   io.perf.walk_start := walk_start
   io.perf.walk_lane  := walk_lane
@@ -806,13 +813,13 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(walk_start, "htlb_walk_start", "htlb_walk_start")
   if (twoStageHTW) {
     midas.targetutils.PerfCounter(walk_start && !l0_hit_in_s_ready, "htlb_walk_l0_miss", "htlb_walk_l0_miss")
-    midas.targetutils.PerfCounter(state === s_wait_ht_directory && mem_resp_valid && io.mem.req.fire,
+    midas.targetutils.PerfCounter(state === YukonState.s_wait_ht_directory && mem_resp_valid && io.mem.req.fire,
       "htlb_fast_path_fired", "htlb_fast_path_fired")
   }
   midas.targetutils.PerfCounter(fill, "htlb_fill", "htlb_fill")
   midas.targetutils.PerfCounter.identity(walk_max, "htlb_walk_lat_max", "htlb_walk_lat_max")
   midas.targetutils.PerfCounter(io.mem.req.fire, "htlb_mem_req", "htlb_mem_req")
-  midas.targetutils.PerfCounter(io.mem.s2_nack && (state === s_wait_ht_directory || state === s_wait_ht_entry),
+  midas.targetutils.PerfCounter(io.mem.s2_nack && (state === YukonState.s_wait_ht_directory || state === YukonState.s_wait_ht_entry),
     "htlb_mem_nack", "htlb_mem_nack")
 
   // Lost entries. "used" is set on a hit and cleared on a fill. The fill write is last, so a fill wins.

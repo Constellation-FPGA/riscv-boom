@@ -359,12 +359,6 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   require(implies(boomParams.enableStateTracing, boomParams.usingHandles),
     "Enabling handle STATE tracing requires that handles are enabled")
 
-  /**
-    * The bit-pattern that handles must have.
-    * The top bit must be set and the 2nd-most-top bit must be clear.
-    */
-  val handlePattern = BitPat("b10??????????????????????????????????????????????????????????????")
-
   /** Lower 32 bits of a 64-bit number are the offset into an object for an
    * operation. */
   val handleOffsetBits: Int = 32
@@ -376,45 +370,6 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
    * On 64-bit systems (which is a minimum requirement), this means handle IDs
    * are 30-bits.*/
   val handleBits: Int = xLen - 2 - handleOffsetBits
-
-  /** Return true.B if ADDR "looks like" a handle, otherwise return false.B.
-    *
-    * We say "looks like" because it is possible to construct a UInt that
-    * matches the requirements we place on handles but does NOT correspond to
-    * any handle. In such a scenario, this function will return true.B despite
-    * the provided UInt not actually being a handle.
-    *
-    * @param addr Virtual address of a handle as a 64-bit number, before handle
-    * translation.
-    */
-  def is_handle(addr: UInt): Bool = {
-    require(addr.getWidth == 64,
-      "Address/number to be used as handle must be 64 bits wide")
-    return addr === handlePattern
-  }
-
-  /** Return the handle ID for a provided address. */
-  def hid(haddr: UInt): UInt = {
-    require(haddr.getWidth == 64,
-      "Address/number to be used as handle must be 64 bits")
-    // Take off top 2 "magic" bits that identify handles, then -1 because
-    // slicing is inclusive on BOTH sides.
-    val id = haddr(xLen - 2 - 1, handleOffsetBits)
-    assert(id.getWidth == handleBits,
-      s"Handle ID is ${id.getWidth} bits wide, but must be handleBits=${handleBits} wide")
-    return id
-  }
-
-  /** Return the offset within the provided address, assuming it is a handle. */
-  def handle_offset(haddr: UInt): UInt = {
-    require(haddr.getWidth == 64,
-      "Address/number to be used as handle must be 64 bits")
-    // -1 because slicing is inclusive on BOTH sides.
-    val offset = haddr(handleOffsetBits - 1, 0)
-    assert(offset.getWidth == handleOffsetBits,
-      s"Handle offset is ${offset.getWidth} bits wide but must be handleOffsetBits=${handleOffsetBits} wide")
-    return offset
-  }
 
   /* The Handle Table Walker (HTW) is a 2-level table.
    * The zeroth level is indexed by the top 12 bits of a handle ID and the first

@@ -545,8 +545,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   io.dmem.release.ready     := will_fire_release.reduce(_||_)
 
   def canFire(is_virtual: Bool, addr: UInt): Bool = {
-    (is_virtual && !is_handle(addr) && RegNext(dtlb.io.miss_rdy)) ||
-    (is_handle(addr) && RegNext(htlb.io.miss_rdy))
+    (is_virtual && !Handle.isHandle(addr) && RegNext(dtlb.io.miss_rdy)) ||
+    (Handle.isHandle(addr) && RegNext(htlb.io.miss_rdy))
   }
 
   // Can we retry a load that missed in the TLB
@@ -652,8 +652,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       timeline.trackState("lsu_sched.lqr", "blocked_hazard", v && block, e.bits.addr.bits)
       timeline.trackState("lsu_sched.lqr", "blocked_store_order", v && store_needs_order, e.bits.addr.bits)
 
-      val canFireVirtual = !is_handle(e.bits.addr.bits) && canFire(e.bits.addr_is_virtual, e.bits.addr.bits)
-      val canFireHandle  = is_handle(e.bits.addr.bits) && canFire(e.bits.addr_is_virtual, e.bits.addr.bits)
+      val canFireVirtual = !Handle.isHandle(e.bits.addr.bits) && canFire(e.bits.addr_is_virtual, e.bits.addr.bits)
+      val canFireHandle  = Handle.isHandle(e.bits.addr.bits) && canFire(e.bits.addr_is_virtual, e.bits.addr.bits)
 
       timeline.trackState("lsu_sched.lqr", "blocked_tlb_not_ready", v && !canFireVirtual, e.bits.addr.bits)
       timeline.trackState("lsu_sched.lqr", "blocked_htlb_not_ready", v && !canFireHandle, e.bits.addr.bits)
@@ -786,7 +786,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val exe_is_handle = widthMap(w =>
     Mux(will_fire_load_incoming(w) ||
         will_fire_sta_incoming(w)  ||
-        will_fire_stad_incoming(w)  , is_handle(exe_req(w).bits.addr),
+        will_fire_stad_incoming(w)  , Handle.isHandle(exe_req(w).bits.addr),
     Mux(will_fire_sfence        (w) , false.B,
     Mux(will_fire_load_retry    (w) , ldq_retry_e.bits.is_handle,
     Mux(will_fire_sta_retry     (w) , stq_retry_e.bits.is_handle,
@@ -875,11 +875,11 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   /* Should this handle request in-execution passthrough the HTLB? */
   val exe_htlb_passthr = {
     /* The HIDs for every in-execution handle translation. */
-    val hids = widthMap(w => hid(exe_htlb_vaddr(w)))
+    val handles = widthMap(w => Handle(exe_htlb_vaddr(w)))
     val is_ht_infinite = io.core.htSize === 0.U
     val handles_in_bounds = widthMap(w =>
-      is_handle(exe_htlb_vaddr(w)) &&
-      (is_ht_infinite || (!is_ht_infinite && (hids(w) < io.core.htSize))))
+      handles(w).isHandle() &&
+      (is_ht_infinite || (!is_ht_infinite && handles(w).inTable(io.core.htSize))))
 
     widthMap(w =>
       Mux(htlb_enabled,
@@ -892,12 +892,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   for (w <- 0 until memWidth) {
     htlb.io.req(w).valid      := exe_is_handle(w)
-    htlb.io.req(w).bits.haddr := exe_htlb_vaddr(w)
+    htlb.io.req(w).bits.haddr := Handle(exe_htlb_vaddr(w))
     htlb.io.req(w).bits.cmd   := exe_cmd(w)
     htlb.io.req(w).bits.passthrough := exe_htlb_passthr(w)
     if (boomParams.enableHandleTracing) {
       when (htlb.io.req(w).valid && !exe_htlb_passthr(w) && is_incoming(w)) {
-        midas.targetutils.SynthesizePrintf(printf("h%x,%d\n", htlb.io.req(w).bits.haddr, htlb.io.req(w).bits.passthrough))
+        midas.targetutils.SynthesizePrintf(printf("h%x,%d\n", htlb.io.req(w).bits.haddr.asUInt, htlb.io.req(w).bits.passthrough))
       }
     }
   }
@@ -910,7 +910,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     val h_hits = (0 until memWidth).map(w => htlb.io.req(w).valid && exe_tlb_uop(w).uses_ldq && exe_tlb_uop(w).ldq_idx === i.U)
     val h_valid = h_hits.reduce(_||_)
     val h_addr  = Mux1H(h_hits, (0 until memWidth).map(w => htlb.io.req(w).bits.haddr))
-    timeline.trackState(s"ldq.$i", "htlb_access", h_valid, h_addr)
+    timeline.trackState(s"ldq.$i", "htlb_access", h_valid, h_addr.asUInt)
 
     val d_hits = (0 until memWidth).map(w => dtlb.io.req(w).valid && exe_tlb_uop(w).uses_ldq && exe_tlb_uop(w).ldq_idx === i.U)
     val d_valid = d_hits.reduce(_||_)
@@ -921,7 +921,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     val h_hits = (0 until memWidth).map(w => htlb.io.req(w).valid && exe_tlb_uop(w).uses_stq && exe_tlb_uop(w).stq_idx === i.U)
     val h_valid = h_hits.reduce(_||_)
     val h_addr  = Mux1H(h_hits, (0 until memWidth).map(w => htlb.io.req(w).bits.haddr))
-    timeline.trackState(s"stq.$i", "htlb_access", h_valid, h_addr)
+    timeline.trackState(s"stq.$i", "htlb_access", h_valid, h_addr.asUInt)
 
     val d_hits = (0 until memWidth).map(w => dtlb.io.req(w).valid && exe_tlb_uop(w).uses_stq && exe_tlb_uop(w).stq_idx === i.U)
     val d_valid = d_hits.reduce(_||_)
@@ -960,7 +960,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // Essentially, pf_ld & ha_ld and pf_st & ha_st are always disjoint.
 
   // FIXME: Make this block read better.
-  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid && is_handle(exe_htlb_vaddr(w))).reduce(_ || _), "l1_dtlb_accesses_from_handle_translations", "l1_dtlb_accesses_from_handle_translations")
+  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid && Handle.isHandle(exe_htlb_vaddr(w))).reduce(_ || _), "l1_dtlb_accesses_from_handle_translations", "l1_dtlb_accesses_from_handle_translations")
   midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_accesses", "l1_dtlb_accesses")
   midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid && dtlb.io.req(w).bits.passthrough).reduce(_ || _), "l1_dtlb_dtlb_passthrough", "l1_dtlb_dtlb_passthrough")
   midas.targetutils.PerfCounter(widthMap(w => (will_fire_load_retry(w) || will_fire_sta_retry(w)) && dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_retries", "l1_dtlb_retries")
@@ -1046,15 +1046,15 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   locally {
     val htlb_rdy = RegNext(htlb.io.miss_rdy)
     val ld_handle_retry = ldq_retry_e.valid && ldq_retry_e.bits.addr.valid &&
-                          ldq_retry_e.bits.addr_is_virtual && is_handle(ldq_retry_e.bits.addr.bits)
+                          ldq_retry_e.bits.addr_is_virtual && Handle.isHandle(ldq_retry_e.bits.addr.bits)
     val st_handle_retry = stq_retry_e.valid && stq_retry_e.bits.addr.valid &&
-                          stq_retry_e.bits.addr_is_virtual && is_handle(stq_retry_e.bits.addr.bits)
+                          stq_retry_e.bits.addr_is_virtual && Handle.isHandle(stq_retry_e.bits.addr.bits)
     midas.targetutils.PerfCounter((ld_handle_retry && !htlb_rdy).asUInt +& (st_handle_retry && !htlb_rdy).asUInt,
       "lsu_handle_retry_blocked", "lsu_handle_retry_blocked")
 
     val other_virtual_ld = (0 until numLdqEntries).map(i =>
       ldq(i).valid && ldq(i).bits.addr.valid && ldq(i).bits.addr_is_virtual &&
-      !is_handle(ldq(i).bits.addr.bits)).reduce(_||_)
+      !Handle.isHandle(ldq(i).bits.addr.bits)).reduce(_||_)
     midas.targetutils.PerfCounter(ld_handle_retry && !htlb_rdy && other_virtual_ld,
       "lsu_retry_hol_blocked", "lsu_retry_hol_blocked")
 

@@ -16,7 +16,7 @@ import boom.v3.common._
  * be performed.
  */
 class HTLBReq(implicit p: Parameters) extends BoomBundle()(p) {
-  val haddr = UInt(xLen.W)
+  val haddr = new Handle()
   val cmd = Bits(rocket.M_SZ.W)
   /** Should this request "passthrough" the HTLB and just return?
    *
@@ -149,7 +149,7 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     /* If the HTLB is on and we get a valid request, check that the requests
      * fields are sane. */
     assert(implies(io.htlb_enabled && io.req(w).valid,
-                   implies(!is_handle(io.req(w).bits.haddr),
+                   implies(!io.req(w).bits.haddr.isHandle(),
                            io.req(w).bits.passthrough)),
       cf"[htlb] Handle translation request for non-handle address ${io.req(w).bits.haddr} must be marked as passthrough")
   }
@@ -158,7 +158,7 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
   for (w <- 0 until memWidth) {
     /* Is this response for a handle request? */
     val resp_for_handle = io.htlb_enabled && io.req(w).valid &&
-      is_handle(io.req(w).bits.haddr) && !io.req(w).bits.passthrough
+      io.req(w).bits.haddr.isHandle() && !io.req(w).bits.passthrough
 
     /* A handle translation request for something that does not "look like" a
      * handle or is marked as passthrough must NEVER miss. */
@@ -235,7 +235,7 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
 
     /* Is this response for a handle request? */
     val resp_for_handle = io.htlb_enabled && req.valid &&
-      is_handle(req.bits.haddr) && !req.bits.passthrough
+      req.bits.haddr.isHandle() && !req.bits.passthrough
 
     /* Despite this module always returning a handle fault, a handle fault is
      * NOT a miss! A miss means that the handle was valid, but that the HTLB
@@ -250,7 +250,8 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
     io.resp(w).miss := false.B
 
     val effective_address = {
-      val sum = io.req(w).bits.haddr
+      // Convert the handle address object back to bits.
+      val sum = io.req(w).bits.haddr.asUInt
       val ea_sign = Mux(
         sum(vaddrBits - 1),
         ~sum(63, vaddrBits) === 0.U,
@@ -264,8 +265,8 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
     // the type system happy right now.
     val HANDLE_FAULT_LD = "b00".U
     val HANDLE_FAULT_ST = "b01".U
-    def handle_fault_haddr_resp(haddr: UInt): UInt = {
-      require(haddr.getWidth == 64)
+    def handle_fault_haddr_resp(handle: Handle): UInt = {
+      val haddr = handle.asUInt
       val fault_haddr = WireInit(0.U(xLen.W))
       // TODO: All commented-out code blocks in here can be re-enabled when
       // there is a boolean controlling if we should even be generating a
@@ -363,7 +364,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // Utilities. Every LSU lane (memWidth) has its own lookup port. There is one walker.
   def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
   val hm_enabled = widthMap(w => !io.req(w).bits.passthrough)
-  val hids = widthMap(w => hid(io.req(w).bits.haddr))
+  val hids = widthMap(w => io.req(w).bits.haddr.hid)
   val idxBits = log2Ceil(cfg.nSets)
 
   // L1 TLB Entries
@@ -372,8 +373,13 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val l1_plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
 
   // Hit Logic (per lane)
-  val hid_tag = widthMap(w => Split(hids(w), idxBits)._1)
-  val hid_set = widthMap(w => Split(hids(w), idxBits)._2)
+  // TODO: Just change rocket.Split to split a Bit instead of UInt?
+  def hidSplit(hid: HID, idx: Int) = {
+    val w = hid.id.getWidth
+    (hid.id(w-1, idx), hid.id(idx-1, 0))
+  }
+  val hid_tag = widthMap(w => hidSplit(hids(w), idxBits)._1)
+  val hid_set = widthMap(w => hidSplit(hids(w), idxBits)._2)
   val real_hits = widthMap(w => VecInit(entries(hid_set(w)).map(hm_enabled(w) && _.hit(hid_tag(w)))).asUInt)
   val htlb_hit = widthMap(w => real_hits(w).orR)
   val htlb_miss = widthMap(w => hm_enabled(w) && !htlb_hit(w))
@@ -389,7 +395,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // The PLRU is updated after the fill target (r_idx, repl_way) is known, below.
 
   // The requested HID
-  val hid_req = Reg(UInt(handleBits.W))
+  val hid_req = Reg(new HID())
 
   // State Machine
   // - ready: idle, waiting for a miss.
@@ -411,11 +417,11 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // HTW: L0 Cache (Top Level Cache) Setup
   // Adapted from HTW.scala
   // We assume twoStageHTW is true for this simplified version with 2-stage
-  private def hidL0(hid: UInt) = hid.head(htwL0Bits)
-  private def hidL1(hid: UInt) = hid(htwL1Bits-1, 0)
-  private def getEntry(hid: UInt) = Split(hidL0(hid), log2Ceil(boomParams.HTWCacheSize))
-  private def getTag(hid: UInt) = getEntry(hid)._1
-  private def getIndex(hid: UInt) = getEntry(hid)._2
+  private def hidL0(hid: HID) = hid.id.head(htwL0Bits)
+  private def hidL1(hid: HID) = hid.id(htwL1Bits-1, 0)
+  private def getEntry(hid: HID) = Split(hidL0(hid), log2Ceil(boomParams.HTWCacheSize))
+  private def getTag(hid: HID) = getEntry(hid)._1
+  private def getIndex(hid: HID) = getEntry(hid)._2
 
   val ht_directory_cache = {
     if (twoStageHTW)
@@ -501,7 +507,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   }
 
   // Fill target. Hoisted out of s_wait_ht_entry so the PerfCounters can see the victim.
-  val (r_tag, r_idx) = Split(hid_req, idxBits)
+  val (r_tag, r_idx) = hidSplit(hid_req, idxBits)
   // Use PLRU to pick way or first invalid
   val candidate_repl_way =
     (if (cfg.nWays > 1) l1_plru.way(r_idx) else 0.U)
@@ -536,7 +542,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         // if (boomParams.enableStateTracing) {
           midas.targetutils.SynthesizePrintf(
             printf("HTLB.miss: cycle=%d hid=0x%x htBase=0x%x\n",
-              timeline.cycle, walk_hid, io.htBase)
+              timeline.cycle, walk_hid.id, io.htBase)
           )
         // }
 
@@ -555,7 +561,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
             when(io.mem.req.fire) {
               midas.targetutils.SynthesizePrintf(
                 printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x (L0 hit)\n",
-                  timeline.cycle, walk_hid, walk_addr)
+                  timeline.cycle, walk_hid.id, walk_addr)
               )
               next_state := s_wait_ht_entry
             }.otherwise {
@@ -567,7 +573,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
             when(io.mem.req.fire) {
               midas.targetutils.SynthesizePrintf(
                 printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
-                  timeline.cycle, walk_hid, walk_addr)
+                  timeline.cycle, walk_hid.id, walk_addr)
               )
               next_state := s_wait_ht_directory
             }.otherwise {
@@ -575,7 +581,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
             }
           }
         } else {
-          walk_addr := io.htBase + (walk_hid * 8.U)
+          walk_addr := Handle.toAddr(walk_hid, io.htBase)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
             next_state := s_wait_ht_entry
@@ -598,7 +604,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
           // if (boomParams.enableStateTracing) {
             midas.targetutils.SynthesizePrintf(
               printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
-                timeline.cycle, hid_req, walk_addr)
+                timeline.cycle, hid_req.id, walk_addr)
             )
           // }
           next_state := s_wait_ht_directory
@@ -612,7 +618,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         when(mem_resp_valid) {
           midas.targetutils.SynthesizePrintf(
             printf("HTLB.dir_resp: cycle=%d hid=0x%x base=0x%x\n",
-              timeline.cycle, hid_req, mem_resp_data)
+              timeline.cycle, hid_req.id, mem_resp_data)
           )
 
           // Update L0 Cache
@@ -649,14 +655,14 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       if (twoStageHTW) {
         walk_addr := inner_walk_base + (hidL1(hid_req) * 8.U)
       } else {
-        walk_addr := io.htBase + hid_req * 8.U
+        walk_addr := Handle.toAddr(hid_req, io.htBase)
       }
 
       io.mem.req.valid := true.B
       when(io.mem.req.fire) {
         midas.targetutils.SynthesizePrintf(
           printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x\n",
-            timeline.cycle, hid_req, walk_addr)
+            timeline.cycle, hid_req.id, walk_addr)
         )
         next_state := s_wait_ht_entry
       }
@@ -701,7 +707,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val addr = entry_data.addr
 
     val effective_address = {
-      val sum = io.req(w).bits.haddr
+      val sum = io.req(w).bits.haddr.asUInt
       val ea_sign = Mux(
         sum(vaddrBits - 1),
         ~sum(63, vaddrBits) === 0.U,
@@ -718,7 +724,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       !hm_enabled(w),
       effective_address,
       Mux(!io.resp(w).miss,
-        entry_data.addr + handle_offset(io.req(w).bits.haddr),
+        entry_data.addr + io.req(w).bits.haddr.offset.asUInt,
         0.U
       )
     )
@@ -833,7 +839,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   if (boomParams.enableHTLBSetCounters) {
     for (s <- 0 until cfg.nSets) {
-      midas.targetutils.PerfCounter(walk_start && Split(walk_hid, idxBits)._2 === s.U, s"htlb_walk_set$s", s"htlb_walk_set$s")
+      midas.targetutils.PerfCounter(walk_start && hidSplit(walk_hid, idxBits)._2 === s.U, s"htlb_walk_set$s", s"htlb_walk_set$s")
     }
   }
 }

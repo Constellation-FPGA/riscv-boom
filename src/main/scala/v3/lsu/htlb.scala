@@ -561,7 +561,7 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
               next_state := s_request_ht_entry
             }
           }.otherwise {
-            walk_addr := io.htBase + (walk_hid >> htwL1Bits) * 8.U
+            walk_addr := io.htBase + hidL0(walk_hid) * 8.U
             io.mem.req.valid := true.B
             when(io.mem.req.fire) {
               midas.targetutils.SynthesizePrintf(
@@ -588,8 +588,8 @@ class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     is(s_request_ht_directory) {
       if (twoStageHTW) {
         // Request L0 entry from memory
-        // Addr = htBase + (hid >> 18) * 8
-        walk_addr := io.htBase + (hid_req >> htwL1Bits) * 8.U
+        // Addr = htBase + (hidL0 * 8)
+        walk_addr := io.htBase + hidL0(hid_req) * 8.U
         io.mem.req.valid := true.B
 
         // Only advance state if the request actually fired

@@ -112,7 +112,7 @@ case class HTLBConfig(
  * translation requests will never be translated.
  *
  */
-abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
+sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
   val io = IO(new Bundle {
     val req = Flipped(Vec(memWidth, Decoupled(new HTLBReq)))
@@ -180,7 +180,8 @@ abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
  * This is similar in spirit to how a hardware page table walker might give up
  * and require the operating system kernel to manually do a page table walk.
  */
-class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p) {
+final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
+  extends HTLB(cfg)(p) {
   // Memory Request Construction
   val walk_addr = WireInit(0.U(xLen.W))
 
@@ -316,7 +317,7 @@ class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters) extends HTLB(cfg)(p)
   * The HTLB then rewrites the LD/ST request's address, and passes it off to the
   * TLB.
   */
-class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
+final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     extends HTLB(cfg)(p) {
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------

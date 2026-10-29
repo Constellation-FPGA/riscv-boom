@@ -361,27 +361,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
   val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U)
 
-  // HTW: L0 Cache (Top Level Cache) Setup
-  // Adapted from HTW.scala
-  // We assume twoStageHTW is true for this simplified version with 2-stage
-  private def hidL0(hid: HID) = hid.id.head(htwL0Bits)
-  private def hidL1(hid: HID) = hid.id(htwL1Bits-1, 0)
-  private def getEntry(hid: HID) = Split(hidL0(hid), log2Ceil(boomParams.HTWCacheSize))
-  private def getTag(hid: HID) = getEntry(hid)._1
-  private def getIndex(hid: HID) = getEntry(hid)._2
-
-  val ht_directory_cache = {
-    if (twoStageHTW)
-      Some(
-        RegInit(
-          VecInit(
-            Seq.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry))
-          )
-        )
-      )
-    else None
-  }
-
   // Hoisted wire so htlb_l0_hit PerfCounter can reference it outside the s_ready block
   val l0_hit_in_s_ready = WireDefault(false.B)
 

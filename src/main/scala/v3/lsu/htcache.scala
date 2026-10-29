@@ -36,7 +36,13 @@ case class HTCacheConfig(
 
 /** Handle Table Cache.
  *
- * This module is intended to serve as a lookup cache inside of [[HTLB]]s.
+ * The handle cache *must* respond in the same cycle as a request comes in, so
+ * there is no ready-valid interface.
+ *
+ * This module is intended to serve as a lookup cache inside of [[HTLB]]s. It is
+ * essentially a helper/wrapper module around an inferred cache memory so that
+ * the cache lookup structure can be customized independently of the handle
+ * walker and the control logic that drives everything.
  */
 final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
@@ -86,6 +92,27 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     }
   }
 
+  // HTW: L0 Cache (Top Level Cache) Setup
+  // Adapted from HTW.scala
+  // We assume twoStageHTW is true for this simplified version with 2-stage
+  // TODO: hidL0 & hidL1 should instances of custom types.
+  private def hidL0(hid: HID) = hid.id.head(htwL0Bits)
+  private def hidL1(hid: HID) = hid.id(htwL1Bits-1, 0)
+  private def getEntry(hid: HID) = Split(hidL0(hid), log2Ceil(boomParams.HTWCacheSize))
+  private def getTag(hid: HID) = getEntry(hid)._1
+  private def getIndex(hid: HID) = getEntry(hid)._2
+
+  val ht_directory_cache = {
+    if (twoStageHTW)
+      Some(
+        RegInit(
+          VecInit(
+            Seq.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry))
+          )
+        )
+      )
+    else None
+  }
 
 
 }

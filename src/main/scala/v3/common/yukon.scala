@@ -14,10 +14,15 @@ final class HID extends Bundle {
   /** Return true.B if this HID is within the bounds of the handle table,
     * based on the provided HTSIZE. Otherwise, return false.B. */
   def inTable(htSize: UInt) = id < htSize
+
+  /** Return true.B if this HID is the "zero HID", the handle with ID 0. */
+  def hidZero(): Bool = this.id === 0.U
 }
 
 object HID {
   def apply(id: UInt) = {
+    require(id.getWidth == Handle.HANDLE_ID_BITS,
+      "New HIDs must be constructed with the right number of bits")
     val hid = Wire(new HID())
     hid.id := id
     hid

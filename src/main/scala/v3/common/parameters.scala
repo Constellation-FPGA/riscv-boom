@@ -106,12 +106,9 @@ case class BoomCoreParams(
 
   /* Yukon stuff */
   usingHandles: Boolean = false,
-  nL1HTLBWays: Int = 4,
-  nL1HTLBSets: Int = 4,
+  nHTLBSets: Int = 4,
+  nHTLBWays: Int = 4,
   enableHTLBSetCounters: Boolean = false, // one PerfCounter per HTLB set (walks per set)
-  enablePHTSupport: Boolean = false,
-  /** Make the Handle Table Walker use a 2-layer/-stage implementation. */
-  enableTwoStageHTW: Boolean = false,
   HTWCacheSize: Int = 4,
   /** Trace state changes to handles on a per-handle basis. */
   enableHandleTracing: Boolean = false,
@@ -347,18 +344,9 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
     "Yukon/Svalbard requires that xLen MUST be 64 bits")
   require(implies(boomParams.usingHandles, (boomParams.HTWCacheSize > 0)),
     "Yukon's Handle Table Walker (HTW) must have a non-zero cache size")
-  require(implies(boomParams.enablePHTSupport, boomParams.usingHandles),
-    "Enabling Physical Handle Table Support requires Yukon's handle translation support")
 
   require(implies(boomParams.enableHandleTracing, boomParams.usingHandles),
     "Enabling handle tracing requires that handles are enabled")
   require(implies(boomParams.enableStateTracing, boomParams.usingHandles),
     "Enabling handle STATE tracing requires that handles are enabled")
-
-  /* The Handle Table Walker (HTW) is a 2-level table.
-   * The zeroth level is indexed by the top 12 bits of a handle ID and the first
-   * level is indexed by the remaining bits (18 bits in this case). */
-  require(boomParams.enableTwoStageHTW, "The HTLB's HTW does not currently support single-level HTWs!")
-  val htwL0Bits = 12
-  val htwL1Bits = handleBits - htwL0Bits
 }

@@ -156,12 +156,13 @@ class LSUCoreIO(implicit p: Parameters) extends BoomBundle()(p)
 
   /** The base address of the Handle Table in memory. */
   val htBase = Input(UInt(xLen.W))
-  /** The size of the handle table in memory, in bytes. */
+  /** The size of the handle table in memory. The size is the maximum number of
+   * [[Handle]]s that will be in the handle table at once. */
   val htSize = Input(UInt(xLen.W))
   /** The base address where HTLB dumps should be placed in memory. */
   val htDump = Input(UInt(xLen.W))
   /** Handle to be invalidated in the HTLB. */
-  val htInval = Input(UInt(xLen.W))
+  val htInval = Input(new HID())
   /** Feedback to handle invalidation CSR that invalidation is complete. */
   val htInvald = Output(Bool())
   /** "Command wire" to completely empty/clear out the HTLB. */
@@ -307,10 +308,13 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   val htlb = Module(new YukonHTLB(
     HTLBConfig(
-      nSets = boomParams.nL1HTLBSets,
-      nWays = boomParams.nL1HTLBWays,
-      // pht_enabled = enablePHTSupport,
-      pht_enabled = true,
+      htwCfg = HTWConfig(
+        cacheSize = boomParams.HTWCacheSize,
+      ),
+      htCacheCfg = HTCacheConfig(
+        nSets = boomParams.nHTLBSets,
+        nWays = boomParams.nHTLBWays,
+      ),
     )
   ))
   io.htlb_mem <> htlb.io.mem
@@ -331,10 +335,6 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val live_store_mask = RegInit(0.U(numStqEntries.W))
   var next_live_store_mask = Mux(clear_store, live_store_mask & ~(1.U << stq_head),
                                               live_store_mask)
-
-
-  def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
-
 
   //-------------------------------------------------------------
   //-------------------------------------------------------------
@@ -490,11 +490,11 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // Delay firing load wakeups and retries now
   val store_needs_order = WireInit(false.B)
 
-  val ldq_incoming_idx = widthMap(i => exe_req(i).bits.uop.ldq_idx)
-  val ldq_incoming_e   = widthMap(i => ldq(ldq_incoming_idx(i)))
+  val ldq_incoming_idx = LSU.widthMap(memWidth)(i => exe_req(i).bits.uop.ldq_idx)
+  val ldq_incoming_e   = LSU.widthMap(memWidth)(i => ldq(ldq_incoming_idx(i)))
 
-  val stq_incoming_idx = widthMap(i => exe_req(i).bits.uop.stq_idx)
-  val stq_incoming_e   = widthMap(i => stq(stq_incoming_idx(i)))
+  val stq_incoming_idx = LSU.widthMap(memWidth)(i => exe_req(i).bits.uop.stq_idx)
+  val stq_incoming_e   = LSU.widthMap(memWidth)(i => stq(stq_incoming_idx(i)))
 
   val ldq_retry_idx = RegNext(AgePriorityEncoder((0 until numLdqEntries).map(i => {
     val e = ldq(i).bits
@@ -522,26 +522,26 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // Determine what can fire
 
   // Can we fire a incoming load
-  val can_fire_load_incoming = widthMap(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_load)
+  val can_fire_load_incoming = LSU.widthMap(memWidth)(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_load)
 
   // Can we fire an incoming store addrgen + store datagen
-  val can_fire_stad_incoming = widthMap(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_sta
+  val can_fire_stad_incoming = LSU.widthMap(memWidth)(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_sta
                                                               && exe_req(w).bits.uop.ctrl.is_std)
 
   // Can we fire an incoming store addrgen
-  val can_fire_sta_incoming  = widthMap(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_sta
+  val can_fire_sta_incoming  = LSU.widthMap(memWidth)(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_sta
                                                               && !exe_req(w).bits.uop.ctrl.is_std)
 
   // Can we fire an incoming store datagen
-  val can_fire_std_incoming  = widthMap(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_std
+  val can_fire_std_incoming  = LSU.widthMap(memWidth)(w => exe_req(w).valid && exe_req(w).bits.uop.ctrl.is_std
                                                               && !exe_req(w).bits.uop.ctrl.is_sta)
 
   // Can we fire an incoming sfence
-  val can_fire_sfence        = widthMap(w => exe_req(w).valid && exe_req(w).bits.sfence.valid)
+  val can_fire_sfence        = LSU.widthMap(memWidth)(w => exe_req(w).valid && exe_req(w).bits.sfence.valid)
 
   // Can we fire a request from dcache to release a line
   // This needs to go through LDQ search to mark loads as dangerous
-  val can_fire_release       = widthMap(w => (w == memWidth-1).B && io.dmem.release.valid)
+  val can_fire_release       = LSU.widthMap(memWidth)(w => (w == memWidth-1).B && io.dmem.release.valid)
   io.dmem.release.ready     := will_fire_release.reduce(_||_)
 
   def canFire(is_virtual: Bool, addr: UInt): Bool = {
@@ -550,7 +550,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   }
 
   // Can we retry a load that missed in the TLB
-  val can_fire_load_retry    = widthMap(w =>
+  val can_fire_load_retry    = LSU.widthMap(memWidth)(w =>
                                ( ldq_retry_e.valid                            &&
                                  ldq_retry_e.bits.addr.valid                  &&
                                  ldq_retry_e.bits.addr_is_virtual             &&
@@ -563,18 +563,18 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   // Can we retry a store addrgen that missed in the TLB
   // - Weird edge case when sta_retry and std_incoming for same entry in same cycle. Delay this
-  val can_fire_sta_retry     = widthMap(w =>
+  val can_fire_sta_retry     = LSU.widthMap(memWidth)(w =>
                                ( stq_retry_e.valid                            &&
                                  stq_retry_e.bits.addr.valid                  &&
                                  stq_retry_e.bits.addr_is_virtual             &&
                                  (w == memWidth-1).B                          &&
                                  canFire(stq_retry_e.bits.addr_is_virtual, stq_retry_e.bits.addr.bits) &&
-                                 !(widthMap(i => (i != w).B               &&
+                                 !(LSU.widthMap(memWidth)(i => (i != w).B               &&
                                                  can_fire_std_incoming(i) &&
                                                  stq_incoming_idx(i) === stq_retry_idx).reduce(_||_))
                                ))
   // Can we commit a store
-  val can_fire_store_commit  = widthMap(w =>
+  val can_fire_store_commit  = LSU.widthMap(memWidth)(w =>
                                ( stq_commit_e.valid                           &&
                                 !stq_commit_e.bits.uop.is_fence               &&
                                 !mem_xcpt_valid                               &&
@@ -587,7 +587,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   // Can we wakeup a load that was nack'd
   val block_load_wakeup = WireInit(false.B)
-  val can_fire_load_wakeup = widthMap(w =>
+  val can_fire_load_wakeup = LSU.widthMap(memWidth)(w =>
                              ( ldq_wakeup_e.valid                                      &&
                                ldq_wakeup_e.bits.addr.valid                            &&
                               !ldq_wakeup_e.bits.succeeded                             &&
@@ -604,10 +604,10 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                                                                           ldq_wakeup_e.bits.st_dep_mask.asUInt === 0.U))))
 
   // Can we fire an incoming hellacache request
-  val can_fire_hella_incoming  = WireInit(widthMap(w => false.B)) // This is assigned to in the hellashim ocntroller
+  val can_fire_hella_incoming  = WireInit(LSU.widthMap(memWidth)(w => false.B)) // This is assigned to in the hellashim ocntroller
 
   // Can we fire a hellacache request that the dcache nack'd
-  val can_fire_hella_wakeup    = WireInit(widthMap(w => false.B)) // This is assigned to in the hellashim controller
+  val can_fire_hella_wakeup    = WireInit(LSU.widthMap(memWidth)(w => false.B)) // This is assigned to in the hellashim controller
 
   midas.targetutils.PerfCounter(
     !(can_fire_load_incoming.reduce(_||_) || can_fire_stad_incoming.reduce(_||_) || can_fire_sta_incoming.reduce(_||_) ||
@@ -774,7 +774,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   assert(!(hella_state =/= h_ready && hella_req.cmd === rocket.M_SFENCE),
     "SFENCE through hella interface not supported")
 
-  val exe_htlb_vaddr = widthMap(w =>
+  val exe_htlb_vaddr = LSU.widthMap(memWidth)(w =>
                     Mux(will_fire_load_incoming (w) ||
                         will_fire_stad_incoming (w) ||
                         will_fire_sta_incoming  (w)  , exe_req(w).bits.addr,
@@ -783,7 +783,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                     Mux(will_fire_sta_retry     (w)  , stq_retry_e.bits.addr.bits,
                     Mux(will_fire_hella_incoming(w)  , hella_req.addr,
                                                        0.U))))))
-  val exe_is_handle = widthMap(w =>
+  val exe_is_handle = LSU.widthMap(memWidth)(w =>
     Mux(will_fire_load_incoming(w) ||
         will_fire_sta_incoming(w)  ||
         will_fire_stad_incoming(w)  , Handle.isHandle(exe_req(w).bits.addr),
@@ -793,7 +793,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     Mux(will_fire_hella_incoming(w) , false.B,
                                       false.B))))))
 
-  val exe_tlb_uop = widthMap(w =>
+  val exe_tlb_uop = LSU.widthMap(memWidth)(w =>
                     Mux(will_fire_load_incoming (w) ||
                         will_fire_stad_incoming (w) ||
                         will_fire_sta_incoming  (w) ||
@@ -803,7 +803,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                     Mux(will_fire_hella_incoming(w)  , NullMicroOp,
                                                        NullMicroOp)))))
 
-  val exe_tlb_vaddr = widthMap(w => Mux(htlb_enabled, htlb.io.resp(w).addr, exe_htlb_vaddr(w)))
+  val exe_tlb_vaddr = LSU.widthMap(memWidth)(w => Mux(htlb_enabled, htlb.io.resp(w).addr, exe_htlb_vaddr(w)))
 
   val exe_sfence = WireInit((0.U).asTypeOf(Valid(new rocket.SFenceReq)))
   for (w <- 0 until memWidth) {
@@ -812,7 +812,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     }
   }
 
-  val exe_size   = widthMap(w =>
+  val exe_size   = LSU.widthMap(memWidth)(w =>
                    Mux(will_fire_load_incoming (w) ||
                        will_fire_stad_incoming (w) ||
                        will_fire_sta_incoming  (w) ||
@@ -821,7 +821,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                        will_fire_sta_retry     (w)  , exe_tlb_uop(w).mem_size,
                    Mux(will_fire_hella_incoming(w)  , hella_req.size,
                                                       0.U)))
-  val exe_cmd    = widthMap(w =>
+  val exe_cmd    = LSU.widthMap(memWidth)(w =>
                    Mux(will_fire_load_incoming (w) ||
                        will_fire_stad_incoming (w) ||
                        will_fire_sta_incoming  (w) ||
@@ -831,13 +831,13 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                    Mux(will_fire_hella_incoming(w)  , hella_req.cmd,
                                                       0.U)))
 
-  val exe_passthr= widthMap(w =>
+  val exe_passthr= LSU.widthMap(memWidth)(w =>
                    Mux(will_fire_hella_incoming(w)  , hella_req.phys,
                                                       false.B))
-  val exe_kill   = widthMap(w =>
+  val exe_kill   = LSU.widthMap(memWidth)(w =>
                    Mux(will_fire_hella_incoming(w)  , io.hellacache.s1_kill,
                                                       false.B))
-  val exe_htlb_miss = widthMap(w =>
+  val exe_htlb_miss = LSU.widthMap(memWidth)(w =>
     Mux(htlb_enabled,
       htlb.io.req(w).valid && (htlb.io.resp(w).miss || !htlb.io.req(w).ready),
       false.B))
@@ -875,19 +875,19 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   /* Should this handle request in-execution passthrough the HTLB? */
   val exe_htlb_passthr = {
     /* The HIDs for every in-execution handle translation. */
-    val handles = widthMap(w => Handle(exe_htlb_vaddr(w)))
+    val handles = LSU.widthMap(memWidth)(w => Handle(exe_htlb_vaddr(w)))
     val is_ht_infinite = io.core.htSize === 0.U
-    val handles_in_bounds = widthMap(w =>
+    val handles_in_bounds = LSU.widthMap(memWidth)(w =>
       handles(w).isHandle() &&
       (is_ht_infinite || (!is_ht_infinite && handles(w).inTable(io.core.htSize))))
 
-    widthMap(w =>
+    LSU.widthMap(memWidth)(w =>
       Mux(htlb_enabled,
         Mux(will_fire_hella_incoming(w), true.B, !handles_in_bounds(w)),
         true.B))
   }
 
-  val is_incoming = widthMap(w =>
+  val is_incoming = LSU.widthMap(memWidth)(w =>
     will_fire_load_incoming(w) || will_fire_stad_incoming(w) || will_fire_sta_incoming(w))
 
   for (w <- 0 until memWidth) {
@@ -902,9 +902,9 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     }
   }
 
-  midas.targetutils.PerfCounter(widthMap(w => exe_htlb_valid(w) && !exe_htlb_passthr(w)).reduce(_ || _), "l1_htlb_accesses_non_passthrough", "l1_htlb_accesses_non_passthrough")
-  midas.targetutils.PerfCounter(widthMap(w => exe_htlb_valid(w) && exe_htlb_passthr(w)).reduce(_ || _), "l1_htlb_accesses_passthrough", "l1_htlb_accesses_passthrough")
-  midas.targetutils.PerfCounter(widthMap(w => exe_htlb_valid(w)).reduce(_ || _), "l1_htlb_accesses", "l1_htlb_accesses")
+  midas.targetutils.PerfCounter(LSU.widthMap(memWidth)(w => exe_htlb_valid(w) && !exe_htlb_passthr(w)).reduce(_ || _), "l1_htlb_accesses_non_passthrough", "l1_htlb_accesses_non_passthrough")
+  midas.targetutils.PerfCounter(LSU.widthMap(memWidth)(w => exe_htlb_valid(w) && exe_htlb_passthr(w)).reduce(_ || _), "l1_htlb_accesses_passthrough", "l1_htlb_accesses_passthrough")
+  midas.targetutils.PerfCounter(LSU.widthMap(memWidth)(w => exe_htlb_valid(w)).reduce(_ || _), "l1_htlb_accesses", "l1_htlb_accesses")
 
   for (i <- 0 until numLdqEntries) {
     val h_hits = (0 until memWidth).map(w => htlb.io.req(w).valid && exe_tlb_uop(w).uses_ldq && exe_tlb_uop(w).ldq_idx === i.U)
@@ -930,12 +930,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   }
 
   // exceptions
-  val ma_ld = widthMap(w => will_fire_load_incoming(w) && exe_req(w).bits.mxcpt.valid) // We get ma_ld in memaddrcalc
-  val ma_st = widthMap(w => (will_fire_sta_incoming(w) || will_fire_stad_incoming(w)) && exe_req(w).bits.mxcpt.valid) // We get ma_ld in memaddrcalc
-  val pf_ld = widthMap(w => dtlb.io.req(w).valid && dtlb.io.resp(w).pf.ld && exe_tlb_uop(w).uses_ldq)
-  val pf_st = widthMap(w => dtlb.io.req(w).valid && dtlb.io.resp(w).pf.st && exe_tlb_uop(w).uses_stq)
-  val ae_ld = widthMap(w => dtlb.io.req(w).valid && dtlb.io.resp(w).ae.ld && exe_tlb_uop(w).uses_ldq)
-  val ae_st = widthMap(w => dtlb.io.req(w).valid && dtlb.io.resp(w).ae.st && exe_tlb_uop(w).uses_stq)
+  val ma_ld = LSU.widthMap(memWidth)(w => will_fire_load_incoming(w) && exe_req(w).bits.mxcpt.valid) // We get ma_ld in memaddrcalc
+  val ma_st = LSU.widthMap(memWidth)(w => (will_fire_sta_incoming(w) || will_fire_stad_incoming(w)) && exe_req(w).bits.mxcpt.valid) // We get ma_ld in memaddrcalc
+  val pf_ld = LSU.widthMap(memWidth)(w => dtlb.io.req(w).valid && dtlb.io.resp(w).pf.ld && exe_tlb_uop(w).uses_ldq)
+  val pf_st = LSU.widthMap(memWidth)(w => dtlb.io.req(w).valid && dtlb.io.resp(w).pf.st && exe_tlb_uop(w).uses_stq)
+  val ae_ld = LSU.widthMap(memWidth)(w => dtlb.io.req(w).valid && dtlb.io.resp(w).ae.ld && exe_tlb_uop(w).uses_ldq)
+  val ae_st = LSU.widthMap(memWidth)(w => dtlb.io.req(w).valid && dtlb.io.resp(w).ae.st && exe_tlb_uop(w).uses_stq)
 
   /* Handle Faults
    *
@@ -946,8 +946,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
    * virtual address. */
   /* NOTE: DTLB requests are suppressed for handles, so the pf_* and ae_* variants never fire
    * for a handle. */
-  val hf_ld = widthMap(w => exe_is_handle(w) && htlb.io.resp(w).handle_fault.ld && exe_tlb_uop(w).uses_ldq && !htlb.io.resp(w).miss)
-  val hf_st = widthMap(w => exe_is_handle(w) && htlb.io.resp(w).handle_fault.st && exe_tlb_uop(w).uses_stq && !htlb.io.resp(w).miss)
+  val hf_ld = LSU.widthMap(memWidth)(w => exe_is_handle(w) && htlb.io.resp(w).handle_fault.ld && exe_tlb_uop(w).uses_ldq && !htlb.io.resp(w).miss)
+  val hf_st = LSU.widthMap(memWidth)(w => exe_is_handle(w) && htlb.io.resp(w).handle_fault.st && exe_tlb_uop(w).uses_stq && !htlb.io.resp(w).miss)
 
   /* If there is an exception, then we should never mark BOTH a handle fault and
    * a page fault for that entry. */
@@ -960,19 +960,19 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // Essentially, pf_ld & ha_ld and pf_st & ha_st are always disjoint.
 
   // FIXME: Make this block read better.
-  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid && Handle.isHandle(exe_htlb_vaddr(w))).reduce(_ || _), "l1_dtlb_accesses_from_handle_translations", "l1_dtlb_accesses_from_handle_translations")
-  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_accesses", "l1_dtlb_accesses")
-  midas.targetutils.PerfCounter(widthMap(w => dtlb.io.req(w).valid && dtlb.io.req(w).bits.passthrough).reduce(_ || _), "l1_dtlb_dtlb_passthrough", "l1_dtlb_dtlb_passthrough")
-  midas.targetutils.PerfCounter(widthMap(w => (will_fire_load_retry(w) || will_fire_sta_retry(w)) && dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_retries", "l1_dtlb_retries")
-  midas.targetutils.PerfCounter(widthMap(w => (will_fire_load_incoming(w) || will_fire_sta_incoming(w) || will_fire_stad_incoming(w) || will_fire_std_incoming(w)) && dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_incoming", "l1_dtlb_incoming")
+  midas.targetutils.PerfCounter(LSU.widthMap(memWidth)(w => dtlb.io.req(w).valid && Handle.isHandle(exe_htlb_vaddr(w))).reduce(_ || _), "l1_dtlb_accesses_from_handle_translations", "l1_dtlb_accesses_from_handle_translations")
+  midas.targetutils.PerfCounter(LSU.widthMap(memWidth)(w => dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_accesses", "l1_dtlb_accesses")
+  midas.targetutils.PerfCounter(LSU.widthMap(memWidth)(w => dtlb.io.req(w).valid && dtlb.io.req(w).bits.passthrough).reduce(_ || _), "l1_dtlb_dtlb_passthrough", "l1_dtlb_dtlb_passthrough")
+  midas.targetutils.PerfCounter(LSU.widthMap(memWidth)(w => (will_fire_load_retry(w) || will_fire_sta_retry(w)) && dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_retries", "l1_dtlb_retries")
+  midas.targetutils.PerfCounter(LSU.widthMap(memWidth)(w => (will_fire_load_incoming(w) || will_fire_sta_incoming(w) || will_fire_stad_incoming(w) || will_fire_std_incoming(w)) && dtlb.io.req(w).valid).reduce(_ || _), "l1_dtlb_incoming", "l1_dtlb_incoming")
 
   // TODO check for xcpt_if and verify that never happens on non-speculative instructions.
-  val mem_xcpt_valids = RegNext(widthMap(w =>
+  val mem_xcpt_valids = RegNext(LSU.widthMap(memWidth)(w =>
                      (pf_ld(w) || pf_st(w) || hf_ld(w) || hf_st(w) || ae_ld(w) || ae_st(w) || ma_ld(w) || ma_st(w)) &&
                      !io.core.exception &&
                      !IsKilledByBranch(io.core.brupdate, exe_tlb_uop(w))))
-  val mem_xcpt_uops   = RegNext(widthMap(w => UpdateBrMask(io.core.brupdate, exe_tlb_uop(w))))
-  val mem_xcpt_causes = RegNext(widthMap(w =>
+  val mem_xcpt_uops   = RegNext(LSU.widthMap(memWidth)(w => UpdateBrMask(io.core.brupdate, exe_tlb_uop(w))))
+  val mem_xcpt_causes = RegNext(LSU.widthMap(memWidth)(w =>
     Mux(ma_ld(w), rocket.Causes.misaligned_load.U,
     Mux(ma_st(w), rocket.Causes.misaligned_store.U,
     Mux(hf_ld(w), rocket.Causes.handle_fault.U,
@@ -1011,10 +1011,10 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   }
 
   /* NOTE: exe_tlb_miss also tracks if there was a miss in/by the HTLB! */
-  val exe_tlb_miss  = widthMap(w => exe_tlb_valid(w) && (dtlb.io.resp(w).miss || exe_htlb_miss(w) || !dtlb.io.req(w).ready))
-  val exe_tlb_paddr = widthMap(w => Cat(dtlb.io.resp(w).paddr(paddrBits-1,corePgIdxBits),
+  val exe_tlb_miss  = LSU.widthMap(memWidth)(w => exe_tlb_valid(w) && (dtlb.io.resp(w).miss || exe_htlb_miss(w) || !dtlb.io.req(w).ready))
+  val exe_tlb_paddr = LSU.widthMap(memWidth)(w => Cat(dtlb.io.resp(w).paddr(paddrBits-1,corePgIdxBits),
                                         exe_tlb_vaddr(w)(corePgIdxBits-1,0)))
-  val exe_tlb_uncacheable = widthMap(w => !(dtlb.io.resp(w).cacheable))
+  val exe_tlb_uncacheable = LSU.widthMap(memWidth)(w => !(dtlb.io.resp(w).cacheable))
 
   for (w <- 0 until memWidth) {
     assert (exe_tlb_paddr(w) === dtlb.io.resp(w).paddr || exe_req(w).bits.sfence.valid, "[lsu] paddrs should match.")
@@ -1058,7 +1058,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     midas.targetutils.PerfCounter(ld_handle_retry && !htlb_rdy && other_virtual_ld,
       "lsu_retry_hol_blocked", "lsu_retry_hol_blocked")
 
-    val retry_miss = widthMap(w => (will_fire_load_retry(w) || will_fire_sta_retry(w)) &&
+    val retry_miss = LSU.widthMap(memWidth)(w => (will_fire_load_retry(w) || will_fire_sta_retry(w)) &&
                                    htlb.io.req(w).valid && !exe_htlb_passthr(w) && htlb.io.resp(w).miss)
     midas.targetutils.PerfCounter(PopCount(retry_miss), "lsu_handle_retry_miss", "lsu_handle_retry_miss")
 
@@ -1101,7 +1101,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val dmem_req = Wire(Vec(memWidth, Valid(new BoomDCacheReq)))
   io.dmem.req.valid := dmem_req.map(_.valid).reduce(_||_)
   io.dmem.req.bits  := dmem_req
-  val dmem_req_fire = widthMap(w => dmem_req(w).valid && io.dmem.req.fire)
+  val dmem_req_fire = LSU.widthMap(memWidth)(w => dmem_req(w).valid && io.dmem.req.fire)
   timeline.trackState("dcache.memreq", "io.dmem.req.fire", io.dmem.req.fire)
   timeline.trackState("dcache.memreq", "fire", dmem_req_fire.reduce(_||_))
 
@@ -1252,34 +1252,34 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   //-------------------------------------------------------------
   // Note the DCache may not have accepted our request
 
-  val exe_req_killed = widthMap(w => IsKilledByBranch(io.core.brupdate, exe_req(w).bits.uop))
+  val exe_req_killed = LSU.widthMap(memWidth)(w => IsKilledByBranch(io.core.brupdate, exe_req(w).bits.uop))
   val stdf_killed = IsKilledByBranch(io.core.brupdate, io.core.fp_stdata.bits.uop)
 
-  val fired_load_incoming  = widthMap(w => RegNext(will_fire_load_incoming(w) && !exe_req_killed(w)))
-  val fired_stad_incoming  = widthMap(w => RegNext(will_fire_stad_incoming(w) && !exe_req_killed(w)))
-  val fired_sta_incoming   = widthMap(w => RegNext(will_fire_sta_incoming (w) && !exe_req_killed(w)))
-  val fired_std_incoming   = widthMap(w => RegNext(will_fire_std_incoming (w) && !exe_req_killed(w)))
+  val fired_load_incoming  = LSU.widthMap(memWidth)(w => RegNext(will_fire_load_incoming(w) && !exe_req_killed(w)))
+  val fired_stad_incoming  = LSU.widthMap(memWidth)(w => RegNext(will_fire_stad_incoming(w) && !exe_req_killed(w)))
+  val fired_sta_incoming   = LSU.widthMap(memWidth)(w => RegNext(will_fire_sta_incoming (w) && !exe_req_killed(w)))
+  val fired_std_incoming   = LSU.widthMap(memWidth)(w => RegNext(will_fire_std_incoming (w) && !exe_req_killed(w)))
   val fired_stdf_incoming  = RegNext(will_fire_stdf_incoming && !stdf_killed)
   val fired_sfence         = RegNext(will_fire_sfence)
   val fired_release        = RegNext(will_fire_release)
-  val fired_load_retry     = widthMap(w => RegNext(will_fire_load_retry   (w) && !IsKilledByBranch(io.core.brupdate, ldq_retry_e.bits.uop)))
-  val fired_sta_retry      = widthMap(w => RegNext(will_fire_sta_retry    (w) && !IsKilledByBranch(io.core.brupdate, stq_retry_e.bits.uop)))
+  val fired_load_retry     = LSU.widthMap(memWidth)(w => RegNext(will_fire_load_retry   (w) && !IsKilledByBranch(io.core.brupdate, ldq_retry_e.bits.uop)))
+  val fired_sta_retry      = LSU.widthMap(memWidth)(w => RegNext(will_fire_sta_retry    (w) && !IsKilledByBranch(io.core.brupdate, stq_retry_e.bits.uop)))
   val fired_store_commit   = RegNext(will_fire_store_commit)
-  val fired_load_wakeup    = widthMap(w => RegNext(will_fire_load_wakeup  (w) && !IsKilledByBranch(io.core.brupdate, ldq_wakeup_e.bits.uop)))
+  val fired_load_wakeup    = LSU.widthMap(memWidth)(w => RegNext(will_fire_load_wakeup  (w) && !IsKilledByBranch(io.core.brupdate, ldq_wakeup_e.bits.uop)))
   val fired_hella_incoming = RegNext(will_fire_hella_incoming)
   val fired_hella_wakeup   = RegNext(will_fire_hella_wakeup)
 
-  val mem_incoming_uop     = RegNext(widthMap(w => UpdateBrMask(io.core.brupdate, exe_req(w).bits.uop)))
-  val mem_ldq_incoming_e   = RegNext(widthMap(w => UpdateBrMask(io.core.brupdate, ldq_incoming_e(w))))
-  val mem_stq_incoming_e   = RegNext(widthMap(w => UpdateBrMask(io.core.brupdate, stq_incoming_e(w))))
+  val mem_incoming_uop     = RegNext(LSU.widthMap(memWidth)(w => UpdateBrMask(io.core.brupdate, exe_req(w).bits.uop)))
+  val mem_ldq_incoming_e   = RegNext(LSU.widthMap(memWidth)(w => UpdateBrMask(io.core.brupdate, ldq_incoming_e(w))))
+  val mem_stq_incoming_e   = RegNext(LSU.widthMap(memWidth)(w => UpdateBrMask(io.core.brupdate, stq_incoming_e(w))))
   val mem_ldq_wakeup_e     = RegNext(UpdateBrMask(io.core.brupdate, ldq_wakeup_e))
   val mem_ldq_retry_e      = RegNext(UpdateBrMask(io.core.brupdate, ldq_retry_e))
   val mem_stq_retry_e      = RegNext(UpdateBrMask(io.core.brupdate, stq_retry_e))
-  val mem_ldq_e            = widthMap(w =>
+  val mem_ldq_e            = LSU.widthMap(memWidth)(w =>
                              Mux(fired_load_incoming(w), mem_ldq_incoming_e(w),
                              Mux(fired_load_retry   (w), mem_ldq_retry_e,
                              Mux(fired_load_wakeup  (w), mem_ldq_wakeup_e, (0.U).asTypeOf(Valid(new LDQEntry))))))
-  val mem_stq_e            = widthMap(w =>
+  val mem_stq_e            = LSU.widthMap(memWidth)(w =>
                              Mux(fired_stad_incoming(w) ||
                                  fired_sta_incoming (w), mem_stq_incoming_e(w),
                              Mux(fired_sta_retry    (w), mem_stq_retry_e, (0.U).asTypeOf(Valid(new STQEntry)))))
@@ -1289,12 +1289,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // Every use below is ANDed with a load or store that fired on the same lane.
   // A hella request needs the same lane's TLB slot, so it never fires with one,
   // and masking fired_hella_incoming here would not change any result.
-  val mem_tlb_miss             = widthMap(w => RegNext(exe_tlb_miss(w)))
+  val mem_tlb_miss             = LSU.widthMap(memWidth)(w => RegNext(exe_tlb_miss(w)))
   val mem_tlb_uncacheable      = RegNext(exe_tlb_uncacheable)
-  val mem_paddr                = RegNext(widthMap(w => dmem_req(w).bits.addr))
+  val mem_paddr                = RegNext(LSU.widthMap(memWidth)(w => dmem_req(w).bits.addr))
 
   // Task 1: Clr ROB busy bit
-  val clr_bsy_valid   = RegInit(widthMap(w => false.B))
+  val clr_bsy_valid   = RegInit(LSU.widthMap(memWidth)(w => false.B))
   val clr_bsy_rob_idx = Reg(Vec(memWidth, UInt(robAddrSz.W)))
   val clr_bsy_brmask  = Reg(Vec(memWidth, UInt(maxBrCount.W)))
 
@@ -1378,44 +1378,44 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // We have the opportunity to kill a request we sent last cycle. Use it wisely!
 
   // We translated a store last cycle
-  val do_st_search = widthMap(w => (fired_stad_incoming(w) || fired_sta_incoming(w) || fired_sta_retry(w)) && !mem_tlb_miss(w))
+  val do_st_search = LSU.widthMap(memWidth)(w => (fired_stad_incoming(w) || fired_sta_incoming(w) || fired_sta_retry(w)) && !mem_tlb_miss(w))
   // We translated a load last cycle
-  val do_ld_search = widthMap(w => ((fired_load_incoming(w) || fired_load_retry(w)) && !mem_tlb_miss(w)) ||
+  val do_ld_search = LSU.widthMap(memWidth)(w => ((fired_load_incoming(w) || fired_load_retry(w)) && !mem_tlb_miss(w)) ||
                      fired_load_wakeup(w))
   // We are making a local line visible to other harts
-  val do_release_search = widthMap(w => fired_release(w))
+  val do_release_search = LSU.widthMap(memWidth)(w => fired_release(w))
 
   // Store addrs don't go to memory yet, get it from the TLB response
   // Load wakeups don't go through TLB, get it through memory
   // Load incoming and load retries go through both
 
-  val lcam_addr  = widthMap(w => Mux(fired_stad_incoming(w) || fired_sta_incoming(w) || fired_sta_retry(w),
+  val lcam_addr  = LSU.widthMap(memWidth)(w => Mux(fired_stad_incoming(w) || fired_sta_incoming(w) || fired_sta_retry(w),
                                      RegNext(exe_tlb_paddr(w)),
                                      Mux(fired_release(w), RegNext(io.dmem.release.bits.address),
                                          mem_paddr(w))))
-  val lcam_uop   = widthMap(w => Mux(do_st_search(w), mem_stq_e(w).bits.uop,
+  val lcam_uop   = LSU.widthMap(memWidth)(w => Mux(do_st_search(w), mem_stq_e(w).bits.uop,
                                  Mux(do_ld_search(w), mem_ldq_e(w).bits.uop, NullMicroOp)))
 
-  val lcam_mask  = widthMap(w => GenByteMask(lcam_addr(w), lcam_uop(w).mem_size))
-  val lcam_st_dep_mask = widthMap(w => mem_ldq_e(w).bits.st_dep_mask)
-  val lcam_is_release = widthMap(w => fired_release(w))
-  val lcam_ldq_idx  = widthMap(w =>
+  val lcam_mask  = LSU.widthMap(memWidth)(w => GenByteMask(lcam_addr(w), lcam_uop(w).mem_size))
+  val lcam_st_dep_mask = LSU.widthMap(memWidth)(w => mem_ldq_e(w).bits.st_dep_mask)
+  val lcam_is_release = LSU.widthMap(memWidth)(w => fired_release(w))
+  val lcam_ldq_idx  = LSU.widthMap(memWidth)(w =>
                       Mux(fired_load_incoming(w), mem_incoming_uop(w).ldq_idx,
                       Mux(fired_load_wakeup  (w), RegNext(ldq_wakeup_idx),
                       Mux(fired_load_retry   (w), RegNext(ldq_retry_idx), 0.U))))
-  val lcam_stq_idx  = widthMap(w =>
+  val lcam_stq_idx  = LSU.widthMap(memWidth)(w =>
                       Mux(fired_stad_incoming(w) ||
                           fired_sta_incoming (w), mem_incoming_uop(w).stq_idx,
                       Mux(fired_sta_retry    (w), RegNext(stq_retry_idx), 0.U)))
 
-  val can_forward = WireInit(widthMap(w =>
+  val can_forward = WireInit(LSU.widthMap(memWidth)(w =>
     Mux(fired_load_incoming(w) || fired_load_retry(w), !mem_tlb_uncacheable(w),
       !ldq(lcam_ldq_idx(w)).bits.addr_is_uncacheable)))
 
   // Mask of stores which we conflict on address with
-  val ldst_addr_matches    = WireInit(widthMap(w => VecInit((0 until numStqEntries).map(x=>false.B))))
+  val ldst_addr_matches    = WireInit(LSU.widthMap(memWidth)(w => VecInit((0 until numStqEntries).map(x=>false.B))))
   // Mask of stores which we can forward from
-  val ldst_forward_matches = WireInit(widthMap(w => VecInit((0 until numStqEntries).map(x=>false.B))))
+  val ldst_forward_matches = WireInit(LSU.widthMap(memWidth)(w => VecInit((0 until numStqEntries).map(x=>false.B))))
 
   val failed_loads     = WireInit(VecInit((0 until numLdqEntries).map(x=>false.B))) // Loads which we will report as failures (throws a mini-exception)
   val nacking_loads    = WireInit(VecInit((0 until numLdqEntries).map(x=>false.B))) // Loads which are being nacked by dcache in the next stage
@@ -1444,15 +1444,15 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     val l_addr  = ldq(i).bits.addr.bits
     val l_mask  = GenByteMask(l_addr, l_bits.uop.mem_size)
 
-    val l_forwarders      = widthMap(w => wb_forward_valid(w) && wb_forward_ldq_idx(w) === i.U)
+    val l_forwarders      = LSU.widthMap(memWidth)(w => wb_forward_valid(w) && wb_forward_ldq_idx(w) === i.U)
     val l_is_forwarding   = l_forwarders.reduce(_||_)
     val l_forward_stq_idx = Mux(l_is_forwarding, Mux1H(l_forwarders, wb_forward_stq_idx), l_bits.forward_stq_idx)
 
 
-    val block_addr_matches = widthMap(w => lcam_addr(w) >> blockOffBits === l_addr >> blockOffBits)
-    val dword_addr_matches = widthMap(w => block_addr_matches(w) && lcam_addr(w)(blockOffBits-1,3) === l_addr(blockOffBits-1,3))
-    val mask_match   = widthMap(w => (l_mask & lcam_mask(w)) === l_mask)
-    val mask_overlap = widthMap(w => (l_mask & lcam_mask(w)).orR)
+    val block_addr_matches = LSU.widthMap(memWidth)(w => lcam_addr(w) >> blockOffBits === l_addr >> blockOffBits)
+    val dword_addr_matches = LSU.widthMap(memWidth)(w => block_addr_matches(w) && lcam_addr(w)(blockOffBits-1,3) === l_addr(blockOffBits-1,3))
+    val mask_match   = LSU.widthMap(memWidth)(w => (l_mask & lcam_mask(w)) === l_mask)
+    val mask_overlap = LSU.widthMap(memWidth)(w => (l_mask & lcam_mask(w)).orR)
 
     // Searcher is a store
     for (w <- 0 until memWidth) {
@@ -1511,7 +1511,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   for (i <- 0 until numStqEntries) {
     val s_addr = stq(i).bits.addr.bits
     val s_uop  = stq(i).bits.uop
-    val dword_addr_matches = widthMap(w =>
+    val dword_addr_matches = LSU.widthMap(memWidth)(w =>
                              ( stq(i).bits.addr.valid      &&
                               !stq(i).bits.addr_is_virtual &&
                               (s_addr(corePAddrBits-1,3) === lcam_addr(w)(corePAddrBits-1,3))))
@@ -1552,10 +1552,10 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     forwarding_age_logic(w).io.addr_matches    := ldst_addr_matches(w).asUInt
     forwarding_age_logic(w).io.youngest_st_idx := lcam_uop(w).stq_idx
   }
-  val forwarding_idx = widthMap(w => forwarding_age_logic(w).io.forwarding_idx)
+  val forwarding_idx = LSU.widthMap(memWidth)(w => forwarding_age_logic(w).io.forwarding_idx)
 
   // Forward if st-ld forwarding is possible from the writemask and loadmask
-  mem_forward_valid       := widthMap(w =>
+  mem_forward_valid       := LSU.widthMap(memWidth)(w =>
                                   (ldst_forward_matches(w)(forwarding_idx(w))        &&
                                  !IsKilledByBranch(io.core.brupdate, lcam_uop(w))    &&
                                  !io.core.exception && !RegNext(io.core.exception)))
@@ -1650,10 +1650,10 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     io.core.exe(w).fresp.bits  := DontCare
   }
 
-  val dmem_resp_fired = WireInit(widthMap(w => false.B))
+  val dmem_resp_fired = WireInit(LSU.widthMap(memWidth)(w => false.B))
 
   midas.targetutils.PerfCounter(
-    io.dmem.perf.acquire && widthMap(w => io.dmem.nack(w).valid && io.dmem.nack(w).bits.is_hella).reduce(_ || _),
+    io.dmem.perf.acquire && LSU.widthMap(memWidth)(w => io.dmem.nack(w).valid && io.dmem.nack(w).bits.is_hella).reduce(_ || _),
     "dcache_hella_nacks",
     "dcache_hella_nacks",
   )
@@ -1758,7 +1758,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   // Initially assume the speculative load wakeup failed
   io.core.ld_miss         := RegNext(io.core.spec_ld_wakeup.map(_.valid).reduce(_||_))
-  val spec_ld_succeed = widthMap(w =>
+  val spec_ld_succeed = LSU.widthMap(memWidth)(w =>
     !RegNext(io.core.spec_ld_wakeup(w).valid) ||
     (io.core.exe(w).iresp.valid &&
       io.core.exe(w).iresp.bits.uop.ldq_idx === RegNext(mem_incoming_uop(w).ldq_idx)
@@ -2073,6 +2073,13 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
                     ~(st_exc_killed_mask.asUInt)
 
 
+}
+
+object LSU
+{
+  def widthMap[T <: Data](width: Int)(f: Int => T)(implicit p: Parameters) = {
+    VecInit((0 until width).map(f))
+  }
 }
 
 /**

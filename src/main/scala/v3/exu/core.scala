@@ -1450,7 +1450,7 @@ class BoomCore()(implicit p: Parameters) extends BoomModule
   io.lsu.htBase := custom_csrs.htBase // NOTE: Any bit set will enable HTLB.
   io.lsu.htSize := custom_csrs.htSize
   io.lsu.htDump := custom_csrs.htDump
-  io.lsu.htInval := custom_csrs.htInval
+  io.lsu.htInval := HID(custom_csrs.htInval(Handle.HANDLE_ID_BITS-1, 0))
   io.lsu.clear_htlb := csr.io.clear_htlb
 
   //-------------------------------------------------------------

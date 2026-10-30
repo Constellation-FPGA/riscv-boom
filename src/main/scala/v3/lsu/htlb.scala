@@ -131,7 +131,7 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     /** The base address where HTLB dumps should be placed in memory. */
     val htDump = Input(UInt(maxSVAddrBits.W))
     /** Handle to be invalidated in the HTLB. */
-    val htInval = Input(UInt(handleBits.W))
+    val htInval = Input(UInt(Handle.HANDLE_ID_BITS.W))
     /** Feedback to handle invalidation CSR that invalidation is complete. */
     val htInvald = Output(Bool())
     /** Raise to true.B to completely empty/clear out the HTLB. */

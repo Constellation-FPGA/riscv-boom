@@ -359,18 +359,6 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   require(implies(boomParams.enableStateTracing, boomParams.usingHandles),
     "Enabling handle STATE tracing requires that handles are enabled")
 
-  /** Lower 32 bits of a 64-bit number are the offset into an object for an
-   * operation. */
-  val handleOffsetBits: Int = 32
-
-  /** The number of bits in a handle ID.
-   *
-   * -2 for the top 2 bits being used for 0b10 to distinguish pages from handles
-   * and then -handleOffsetBits to account for offsets.
-   * On 64-bit systems (which is a minimum requirement), this means handle IDs
-   * are 30-bits.*/
-  val handleBits: Int = xLen - 2 - handleOffsetBits
-
   /* The Handle Table Walker (HTW) is a 2-level table.
    * The zeroth level is indexed by the top 12 bits of a handle ID and the first
    * level is indexed by the remaining bits (18 bits in this case). */

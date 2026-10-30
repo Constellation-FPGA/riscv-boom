@@ -140,6 +140,19 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val htSize = Input(UInt(xLen.W))
   })
 
+  /** Convert a handle to a virtual address.
+   * Meant to be used for passthrough requests. */
+  protected def effectiveAddress(haddr: Handle): UInt = {
+    val sum = haddr.asUInt
+    val ea_sign = Mux(
+      sum(vaddrBits - 1),
+      ~sum(63, vaddrBits) === 0.U,
+      sum(63, vaddrBits) =/= 0.U
+    )
+
+    Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
+  }
+
   assert(implies(io.mem.req.valid,
                  (io.mem.req.bits.addr & ((1.U << io.mem.req.bits.size)) - 1.U) === 0.U),
     "[htlb] HellaCache request from HTLB is misaligned!")
@@ -250,18 +263,6 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
      * the virtual address. */
     io.resp(w).miss := false.B
 
-    val effective_address = {
-      // Convert the handle address object back to bits.
-      val sum = io.req(w).bits.haddr.asUInt
-      val ea_sign = Mux(
-        sum(vaddrBits - 1),
-        ~sum(63, vaddrBits) === 0.U,
-        sum(63, vaddrBits) =/= 0.U
-      )
-
-      Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
-    }
-
     // These are bit patterns, not UInts, but this is the easiest way to make
     // the type system happy right now.
     val HANDLE_FAULT_LD = "b00".U
@@ -290,7 +291,7 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
     io.resp(w).addr := Mux(resp_for_handle,
       handle_fault_haddr_resp(req.bits.haddr),
-      effective_address)
+      effectiveAddress(io.req(w).bits.haddr))
 
     /* NOTE: If a handle is marked as writable, then this block of hardware
      * will also IMPLICITLY treat it as readable.
@@ -714,23 +715,12 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       entries(hid_set(w))(OHToUInt(real_hits(w))).data.asTypeOf(new HTLBEntryData)
     val addr = entry_data.addr
 
-    val effective_address = {
-      val sum = io.req(w).bits.haddr.asUInt
-      val ea_sign = Mux(
-        sum(vaddrBits - 1),
-        ~sum(63, vaddrBits) === 0.U,
-        sum(63, vaddrBits) =/= 0.U
-      )
-
-      Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
-    }
 
     io.req(w).ready := true.B
     io.resp(w).miss := htlb_miss(w)
-
     io.resp(w).addr := Mux(
       !hm_enabled(w),
-      effective_address,
+      effectiveAddress(io.req(w).bits.haddr),
       Mux(!io.resp(w).miss,
         entry_data.addr + io.req(w).bits.haddr.offset.asUInt,
         0.U

@@ -10,6 +10,16 @@ import freechips.rocketchip.util.Split
 
 import boom.v3.common._
 
+/** A Handle Table Entry
+ *
+ * TODO: What is this for? It is only used to convert a mem_resp_data to
+ * something else in the s_wait_ht_entry state.
+ */
+final class HTE(implicit p: Parameters) extends BoomBundle()(p) {
+  val reserved = UInt((64 - maxSVAddrBits).W)
+  val addr = UInt(maxSVAddrBits.W) // Virtual object base; upper bits are ignored.
+}
+
 /** A request made to an HTLB.
  *
  * Requires the "handle address" to operate on and the command (CMD) that will
@@ -79,6 +89,7 @@ class HTLBPerfIO extends Bundle {
  */
 case class HTLBConfig(
   pht_enabled: Boolean = true,
+  htCacheCfg: HTCacheConfig,
 )
 
 /** Handle Translation Lookaside Buffer.
@@ -318,6 +329,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   // The lookup and the walker serve lane 0 only.
   require(memWidth == 1, s"HTLBSimple supports memWidth == 1 only, not $memWidth")
+
+  val cache = new HTCache(cfg.htCacheCfg)
 
   for (w <- 0 until memWidth) {
     io.resp(w).handle_fault.ld := false.B
@@ -597,6 +610,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
         newEntry.addr := hte.addr
 
         entries(r_idx)(repl_way).insert(r_tag, newEntry)
+        // cache.insert(r_idx, repl_way, r_tag, newEntry)
 
         next_state := YukonState.s_ready
 

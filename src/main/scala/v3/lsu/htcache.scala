@@ -4,16 +4,9 @@ import chisel3._
 import chisel3.util._
 
 import org.chipsalliance.cde.config.Parameters
-import freechips.rocketchip.util.{SetAssocLRU}
+import freechips.rocketchip.util.{SetAssocLRU, Split}
 
 import boom.v3.common._
-
-/** A Handle Table Entry
- */
-final class HTE(implicit p: Parameters) extends BoomBundle()(p) {
-  val reserved = UInt((64 - maxSVAddrBits).W)
-  val addr = UInt(maxSVAddrBits.W) // Virtual object base; upper bits are ignored.
-}
 
 /** TODO: Document this.
  * ???
@@ -47,10 +40,16 @@ case class HTCacheConfig(
 final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
 
+  /** The data cached by the [[HTCache]]. */
+  // TODO: Rename this class.
   class HTLBEntryData() extends Bundle() {
     val addr = UInt(maxSVAddrBits.W) // Virtual object base.
   }
 
+  /** A handle table cache entry.
+   *
+   * @param nSets The number of sets that this entry manages.
+   */
   class Entry(nSets: Int) extends Bundle {
     private val idxBits = log2Ceil(nSets)
     private val tagBits = handleBits - idxBits
@@ -70,10 +69,15 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     def invalidate() = { valid := false.B }
   }
 
-  val timeline = new TimelineTracker()
-
   // L1 TLB Entries
   val entries = Reg(Vec(cfg.nSets, Vec(cfg.nWays, new Entry(cfg.nSets))))
+
+  def insert(data: HTLBEntryData) = {
+    entries(r_idx)(repl_way).insert(r_tag, data)
+  }
+
+  val timeline = new TimelineTracker()
+
 
   val l1_plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
 

@@ -129,27 +129,17 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   // }
   val htlb_hit = widthMap(w => real_hits(w).orR)
 
-  def insert(idx: UInt, data: HTLBEntryData) = {
-    // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt
-    // (OH1ToUInt gave way k+1). A fill marks the new entry as recently used, so
-    // the next fill in the set does not evict it before the retry. access()
-    // applies the updates in order: lane 0, lane 1, ..., then the fill last.
-    // val plru_hit  = widthMap(w => io.req(w).valid && hm_enabled(w) && real_hits(w).orR)
-    // val plru_hit  = widthMap(w => io.lookup(w).access && io.lookup(w).en && real_hits(w).orR)
-    // entries(r_idx)(repl_way).insert(r_tag, data)
-    val plru_hit = widthMap(w => io.lookup(w).access && real_hits(w).orR)
-    l1_plru.access(
-      hid_set :+ r_idx,
-      widthMap(w => Pipe(plru_hit(w), OHToUInt(real_hits(w)), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
-  }
+  val hit_way = widthMap(w => OHToUInt(real_hits(w)))
 
-  val timeline = new TimelineTracker()
+  // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt
+  // (OH1ToUInt gave way k+1). A fill marks the new entry as recently used, so
+  // the next fill in the set does not evict it before the retry. access()
+  // applies the updates in order: lane 0, lane 1, ..., then the fill last.
+  val plru_hit = widthMap(w => io.lookup(w).access && real_hits(w).orR)
+  l1_plru.access(
+    hid_set :+ r_idx,
+    widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
 
-  for (s <- 0 until cfg.nSets) {
-    for (w <- 0 until cfg.nWays) {
-      val e = entries(s)(w)
-      timeline.trackState(s"htlb.s${s}w${w}", "invalid", !e.valid, e.tag)
-    }
   }
 
   /* Invalidation */
@@ -186,4 +176,13 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   //     cache(l0_idx).valid := false.B
   //   }
   // }
+
+  val timeline = new TimelineTracker()
+
+  for (s <- 0 until cfg.nSets) {
+    for (w <- 0 until cfg.nWays) {
+      val e = entries(s)(w)
+      timeline.trackState(s"htlb.s${s}w${w}", "invalid", !e.valid, e.tag)
+    }
+  }
 }

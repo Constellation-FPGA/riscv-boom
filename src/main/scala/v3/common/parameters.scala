@@ -355,10 +355,7 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   require(implies(boomParams.enableStateTracing, boomParams.usingHandles),
     "Enabling handle STATE tracing requires that handles are enabled")
 
-  /* The Handle Table Walker (HTW) is a 2-level table.
-   * The zeroth level is indexed by the top 12 bits of a handle ID and the first
-   * level is indexed by the remaining bits (18 bits in this case). */
+  /* The Handle Table Walker (HTW) currently is REQUIRED to be a 2-level lookup
+   * table. */
   require(boomParams.enableTwoStageHTW, "The HTLB's HTW does not currently support single-level HTWs!")
-  val htwL0Bits = 12
-  val htwL1Bits = handleBits - htwL0Bits
 }

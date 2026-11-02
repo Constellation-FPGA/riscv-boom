@@ -124,7 +124,7 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     /** The base address where HTLB dumps should be placed in memory. */
     val htDump = Input(UInt(maxSVAddrBits.W))
     /** Handle to be invalidated in the HTLB. */
-    val htInval = Input(UInt(Handle.HANDLE_ID_BITS.W))
+    val htInval = Input(new HID())
     /** Feedback to handle invalidation CSR that invalidation is complete. */
     val htInvald = Output(Bool())
     /** Raise to true.B to completely empty/clear out the HTLB. */
@@ -401,8 +401,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   // htInval is a CSR that software writes to request an invalidation.
   // The CSR clears itself when hrInvald asserts, so we don't need pulse logic.
-  val do_htInval = htw.io.req.ready && io.htInval.orR
-  val inval_all  = io.htInval === Fill(Handle.HANDLE_ID_BITS, 1.B)
+  val do_htInval = htw.io.req.ready && !io.htInval.hidZero()
+  val inval_all  = io.htInval === HID(Fill(Handle.HANDLE_ID_BITS, 1.B))
 
   htw.io.inval.valid := io.clear_htlb || (do_htInval && inval_all)
   htw.io.inval.bits.all := io.clear_htlb || (do_htInval && inval_all)
@@ -421,7 +421,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   when(do_htInval) {
     midas.targetutils.SynthesizePrintf(
-      printf("HTLB.htInval: cycle=%d hid=0x%x\n", timeline.cycle, io.htInval)
+      printf("HTLB.htInval: cycle=%d hid=0x%x\n", timeline.cycle, io.htInval.asUInt)
     )
   }
 
@@ -430,7 +430,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(io.clear_htlb, "htlb_clear", "htlb_clear")
   midas.targetutils.PerfCounter(do_htInval && !inval_all, "htlb_inval_one", "htlb_inval_one")
   midas.targetutils.PerfCounter(do_htInval && inval_all, "htlb_inval_all", "htlb_inval_all")
-  midas.targetutils.PerfCounter(io.htInval.orR && HTWState.waiting(htw.io.events.state),
+  midas.targetutils.PerfCounter(!io.htInval.hidZero() && HTWState.waiting(htw.io.events.state),
     "htlb_inval_wait", "htlb_inval_wait")
 
   // ------------------------------------------------------------------------------------------------

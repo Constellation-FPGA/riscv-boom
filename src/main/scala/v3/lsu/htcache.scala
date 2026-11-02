@@ -138,6 +138,12 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     hid_set :+ r_idx,
     widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
 
+  for (w <- 0 until memWidth) {
+    io.lookup(w).hit  := real_hits(w).orR
+    io.lookup(w).way  := hit_way(w)
+    // FIXME: We should return a better class than just UInt
+    // This could be HTLBEntryData, if that class is moved to file-level.
+    io.lookup(w).data := entries(hid_set(w))(hit_way(w)).data.addr
   }
 
   /* Invalidation */

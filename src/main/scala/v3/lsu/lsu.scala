@@ -307,12 +307,14 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   val htlb = Module(new YukonHTLB(
     HTLBConfig(
-      // pht_enabled = enablePHTSupport,
-      pht_enabled = true,
-      HTCacheConfig(
+      htwCfg = HTWConfig(
+        // pht_enabled = enablePHTSupport,
+        pht_enabled = true,
+      ),
+      htCacheCfg = HTCacheConfig(
         nSets = boomParams.nL1HTLBSets,
         nWays = boomParams.nL1HTLBWays,
-      )
+      ),
     )
   ))
   io.htlb_mem <> htlb.io.mem

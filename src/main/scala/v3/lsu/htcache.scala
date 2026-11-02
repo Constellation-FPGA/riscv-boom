@@ -102,6 +102,9 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)
 
+  val hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._1)
+  val hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._2)
+
   // Use PLRU to pick way or first invalid
   val candidate_repl_way =
     (if (cfg.nWays > 1) l1_plru.way(r_idx) else 0.U)
@@ -141,9 +144,6 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   }
 
   val timeline = new TimelineTracker()
-
-  val hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._1)
-  val hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._2)
 
   for (s <- 0 until cfg.nSets) {
     for (w <- 0 until cfg.nWays) {

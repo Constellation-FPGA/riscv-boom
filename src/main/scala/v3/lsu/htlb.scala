@@ -352,9 +352,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val hm_enabled = widthMap(w => !io.req(w).bits.passthrough)
   val hids = widthMap(w => io.req(w).bits.haddr.hid)
 
-  // Hoisted wire so htlb_l0_hit PerfCounter can reference it outside the s_ready block
-  val l0_hit_in_s_ready = WireDefault(false.B)
-
   // Walker arbitration: the lowest lane that misses starts the walk. A miss on
   // another lane in the same cycle reports a miss and retries, as a miss while
   // the walker is busy does.

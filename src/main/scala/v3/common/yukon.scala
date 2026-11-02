@@ -21,6 +21,8 @@ final class HID extends Bundle {
 
 object HID {
   def apply(id: UInt) = {
+    require(id.getWidth == Handle.HANDLE_ID_BITS,
+      "New HIDs must be constructed with the right number of bits")
     val hid = Wire(new HID())
     hid.id := id
     hid

@@ -339,10 +339,16 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   htw.io.mem <> io.mem
   cache.io.fill := htw.io.fill
 
+  val htCache_hit = widthMap(w => cache.io.lookup(w).hit)
+  val htCache_way = widthMap(w => cache.io.lookup(w).way)
+
   for (w <- 0 until memWidth) {
     io.resp(w).handle_fault.ld := false.B
     io.resp(w).handle_fault.st := false.B
   }
+
+  val htCache_hit = widthMap(w => cache.io.lookup(w).hit)
+  val htCache_way = widthMap(w => cache.io.lookup(w).way)
 
   val timeline = new TimelineTracker()
 
@@ -351,6 +357,10 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val hm_enabled = widthMap(w => !io.req(w).bits.passthrough)
   val hids = widthMap(w => io.req(w).bits.haddr.hid)
 
+  val htlb_miss = widthMap(w => {
+    io.req(w).valid && hm_enabled(w) && !htCache_hit(w)
+  })
+
   // Walker arbitration: the lowest lane that misses starts the walk. A miss on
   // another lane in the same cycle reports a miss and retries, as a miss while
   // the walker is busy does.
@@ -358,12 +368,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val any_miss  = lane_miss.asUInt.orR
   val walk_lane = if (memWidth == 1) 0.U else PriorityEncoder(lane_miss.asUInt)
   val walk_hid  = hids(walk_lane)
-
-  val htCache_hit = widthMap(w => cache.io.lookup(w).hit)
-  val htCache_way = widthMap(w => cache.io.lookup(w).way)
-  val htlb_miss = widthMap(w => {
-    io.req(w).valid && hm_enabled(w) && !htCache_hit(w)
-  })
 
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
   // FIXME: Bring these PerfCounters back

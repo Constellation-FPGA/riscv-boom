@@ -333,8 +333,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
    * This means that both modules' internal storage will be reset at the same
    * time as the outer YukonHTLB. So we do not need any special logic for
    * invalidating their contents when reset is triggered. */
-  val cache = new HTCache(cfg.htCacheCfg)
-  val htw = new HTW(cfg.htwCfg)
+  val cache = Module(new HTCache(cfg.htCacheCfg))
+  val htw = Module(new HTW(cfg.htwCfg))
   htw.io.htBase := io.htBase
   htw.io.mem <> io.mem
   cache.io.fill := htw.io.fill

@@ -161,7 +161,7 @@ class LSUCoreIO(implicit p: Parameters) extends BoomBundle()(p)
   /** The base address where HTLB dumps should be placed in memory. */
   val htDump = Input(UInt(xLen.W))
   /** Handle to be invalidated in the HTLB. */
-  val htInval = Input(UInt(xLen.W))
+  val htInval = Input(new HID())
   /** Feedback to handle invalidation CSR that invalidation is complete. */
   val htInvald = Output(Bool())
   /** "Command wire" to completely empty/clear out the HTLB. */

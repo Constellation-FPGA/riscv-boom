@@ -127,8 +127,6 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   //   def blah(memLane: Int) = io.lookup(memLane).en && _.hit(hid_tag(memLane))
   //   widthMap(w => VecInit(entries(hid_set(w)).map(blah)).asUInt)
   // }
-  val htlb_hit = widthMap(w => real_hits(w).orR)
-
   val hit_way = widthMap(w => OHToUInt(real_hits(w)))
 
   // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt

@@ -8,15 +8,6 @@ import freechips.rocketchip.util.{SetAssocLRU, Split}
 
 import boom.v3.common._
 
-/** TODO: Document this.
- * ???
- */
-final class TopLevelCacheEntry(implicit p: Parameters) extends BoomBundle()(p) {
-  val valid = Bool()
-  val tag = UInt(htwL1Bits.W)
-  val data = UInt(maxSVAddrBits.W)     // Store the base address for inner walks
-}
-
 /** Describes the configuration of an [[HTCache]].
  *
  * @param nSets The number of sets available inside this HTLB.
@@ -25,12 +16,46 @@ final class TopLevelCacheEntry(implicit p: Parameters) extends BoomBundle()(p) {
 case class HTCacheConfig(
   nSets: Int,
   nWays: Int,
-)
+) {
+  def idxBits = log2Ceil(nSets)
+  def tagBits = Handle.HANDLE_ID_BITS - idxBits
+}
+
+final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
+  extends BoomBundle {
+
+  final class HTCacheLookup(cfg: HTCacheConfig) extends Bundle {
+    /** Enable this handle table cache to hit. false.B for passthrough requests. */
+    // FIXME: Rename back to passthrough to match HTLB from before.
+    val en = Input(Bool())
+    /** This lookup is a real access: a hit updates the replacement state. */
+    // FIXME: Do we really need this if we have en/passthrough?
+    val access = Input(Bool())
+    /** The HID that is being looked up in the handle cache. */
+    val hid = Input(new HID())
+    /** Did the lookup request hit in the cache? */
+    val hit = Output(Bool())
+    /** The way that had a hit. Meaningless when [[hit]] is false.B. */
+    val way = Output(UInt(log2Ceil(cfg.nWays).W))
+    /** The hit entry's data. Meaningless when [[hit]] is false.B. */
+    // val data = Output(new HTLBEntryData)
+    // data is the same as HTFill.addr
+    val data = Output(UInt(maxSVAddrBits.W))
+    // FIXME: Should way & data become a bundle and be "hidden" inside a Valid?
+  }
+
+  /** The handle cache lookup that should be performed. */
+  val lookup = Vec(memWidth, new HTCacheLookup(cfg))
+  val fill = Input(Valid(new HTFill()))
+  val inval = Input(Valid(new HandleInvalidation()))
+  // FIXME: used should be simplified?
+  val used = Output(Vec(cfg.nSets, Vec(cfg.nWays, Bool())))
+  val victim_valid = Output(Bool())
+}
 
 /** Handle Table Cache.
  *
- * The handle cache *must* respond in the same cycle as a request comes in, so
- * there is no ready-valid interface.
+ * The handle cache *must* respond in the same cycle as a request comes in.
  *
  * This module is intended to serve as a lookup cache inside of [[HTLB]]s. It is
  * essentially a helper/wrapper module around an inferred cache memory so that
@@ -40,20 +65,19 @@ case class HTCacheConfig(
 final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
 
+  val io = IO(new HTCacheIO(cfg))
+
+  private val idxBits = log2Ceil(cfg.nSets)
+  private val tagBits = Handle.HANDLE_ID_BITS - idxBits
+
   /** The data cached by the [[HTCache]]. */
   // TODO: Rename this class.
   class HTLBEntryData() extends Bundle() {
     val addr = UInt(maxSVAddrBits.W) // Virtual object base.
   }
 
-  /** A handle table cache entry.
-   *
-   * @param nSets The number of sets that this entry manages.
-   */
-  class Entry(nSets: Int) extends Bundle {
-    private val idxBits = log2Ceil(nSets)
-    private val tagBits = handleBits - idxBits
-
+  /** A handle table cache entry. */
+  class Entry extends Bundle {
     val tag = UInt(tagBits.W)
     val data = new HTLBEntryData()
     val valid = Bool()
@@ -69,25 +93,57 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     def invalidate() = { valid := false.B }
   }
 
-  // L1 TLB Entries
-  val entries = Reg(Vec(cfg.nSets, Vec(cfg.nWays, new Entry(cfg.nSets))))
+  /* FIXME: Move all definitions of widthMap out to a common object method.
+   * Perhaps LSU.widthMap? */
+  def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
 
-  def insert(data: HTLBEntryData) = {
-    entries(r_idx)(repl_way).insert(r_tag, data)
+  val entries = Reg(Vec(cfg.nSets, Vec(cfg.nWays, new Entry())))
+  val l1_plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
+
+  val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)
+
+  // Use PLRU to pick way or first invalid
+  val candidate_repl_way =
+    (if (cfg.nWays > 1) l1_plru.way(r_idx) else 0.U)
+
+  val repl_way =
+    if (cfg.nWays > 1) {
+      val valid_entries = VecInit(entries(r_idx).map(_.valid))
+      Mux(
+        valid_entries.asUInt.andR,
+        candidate_repl_way,
+        OHToUInt(PriorityEncoderOH(~valid_entries.asUInt))
+      )
+    }
+    else 0.U
+
+  // Hit Logic (per lane)
+  // FIXME: Can we remove the asUInt call here?
+  val real_hits = widthMap(w => VecInit(entries(hid_set(w)).map(io.lookup(w).en && _.hit(hid_tag(w)))).asUInt)
+  // val real_hits = {
+  //   def blah(memLane: Int) = io.lookup(memLane).en && _.hit(hid_tag(memLane))
+  //   widthMap(w => VecInit(entries(hid_set(w)).map(blah)).asUInt)
+  // }
+  val htlb_hit = widthMap(w => real_hits(w).orR)
+
+  def insert(idx: UInt, data: HTLBEntryData) = {
+    // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt
+    // (OH1ToUInt gave way k+1). A fill marks the new entry as recently used, so
+    // the next fill in the set does not evict it before the retry. access()
+    // applies the updates in order: lane 0, lane 1, ..., then the fill last.
+    // val plru_hit  = widthMap(w => io.req(w).valid && hm_enabled(w) && real_hits(w).orR)
+    // val plru_hit  = widthMap(w => io.lookup(w).access && io.lookup(w).en && real_hits(w).orR)
+    // entries(r_idx)(repl_way).insert(r_tag, data)
+    val plru_hit = widthMap(w => io.lookup(w).access && real_hits(w).orR)
+    l1_plru.access(
+      hid_set :+ r_idx,
+      widthMap(w => Pipe(plru_hit(w), OHToUInt(real_hits(w)), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
   }
 
   val timeline = new TimelineTracker()
 
-
-  val l1_plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
-
-  // TODO: Just change rocket.Split to split a Bit instead of UInt?
-  private def hidSplit(hid: HID, idx: Int) = {
-    val w = hid.id.getWidth
-    (hid.id(w-1, idx), hid.id(idx-1, 0))
-  }
-  val hid_tag = widthMap(w => hidSplit(hids(w), idxBits)._1)
-  val hid_set = widthMap(w => hidSplit(hids(w), idxBits)._2)
+  val hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._1)
+  val hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._2)
 
   for (s <- 0 until cfg.nSets) {
     for (w <- 0 until cfg.nWays) {
@@ -96,27 +152,38 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     }
   }
 
-  // HTW: L0 Cache (Top Level Cache) Setup
-  // Adapted from HTW.scala
-  // We assume twoStageHTW is true for this simplified version with 2-stage
-  // TODO: hidL0 & hidL1 should instances of custom types.
-  private def hidL0(hid: HID) = hid.id.head(htwL0Bits)
-  private def hidL1(hid: HID) = hid.id(htwL1Bits-1, 0)
-  private def getEntry(hid: HID) = Split(hidL0(hid), log2Ceil(boomParams.HTWCacheSize))
-  private def getTag(hid: HID) = getEntry(hid)._1
-  private def getIndex(hid: HID) = getEntry(hid)._2
-
-  val ht_directory_cache = {
-    if (twoStageHTW)
-      Some(
-        RegInit(
-          VecInit(
-            Seq.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry))
-          )
-        )
-      )
-    else None
+  /* Invalidation */
+  val (e_tag, e_idx) = HTLBUtils.hidSplit(io.inval.bits.hid, idxBits)
+  for (e <- entries(e_idx)) {
+    when(e_tag === e.tag) {
+      e.invalidate()
+    }
   }
 
+  // Lost entries. "used" is set on a hit and cleared on a fill. The fill write is last, so a fill wins.
+  val used = RegInit(VecInit(Seq.fill(cfg.nSets)(VecInit(Seq.fill(cfg.nWays)(false.B)))))
+  // val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
+  io.used := used
+  for (w <- 0 until memWidth) {
+    when(io.lookup(w).en && io.lookup(w).hit) {
+      used(hid_set(w))(OHToUInt(real_hits(w))) := true.B
+    }
+  }
+  when(io.fill.valid) { used(r_idx)(repl_way) := false.B }
 
+  io.victim_valid := entries(r_idx)(repl_way).valid
+  midas.targetutils.PerfCounter(io.fill.valid, "htlb_fill", "htlb_fill")
+  midas.targetutils.PerfCounter(io.fill.valid && entries(r_idx)(repl_way).valid,
+    "htlb_evict_valid", "htlb_evict_valid")
+  midas.targetutils.PerfCounter(io.fill.valid && entries(r_idx)(repl_way).valid && !used(r_idx)(repl_way),
+    "htlb_evict_unused", "htlb_evict_unused")
+
+  // if (boomParams.enableTwoStageHTW) {
+  //   val l0_idx = getIndex(io.htInval)
+  //   val l0_tag = getTag(io.htInval)
+  //   val cache = ht_directory_cache.get
+  //   when(cache(l0_idx).valid && cache(l0_idx).tag === l0_tag) {
+  //     cache(l0_idx).valid := false.B
+  //   }
+  // }
 }

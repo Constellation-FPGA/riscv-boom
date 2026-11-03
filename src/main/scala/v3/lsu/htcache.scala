@@ -56,8 +56,20 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
     // FIXME: Should way & data become a bundle and be "hidden" inside a Valid?
   }
 
+  /** A lookup with no side effects, for the REG_PROBE control load. */
+  final class HTCacheProbe extends Bundle {
+    /** The HID to look for. */
+    val hid = Input(new HID())
+    /** Does the cache hold a translation (not a handle fault) for the HID? */
+    val hit = Output(Bool())
+    /** The translation. Meaningless when [[hit]] is false.B. */
+    val data = Output(new TranslatedHandle())
+  }
+
   /** The handle cache lookup that should be performed. */
   val lookup = Vec(memWidth, new HTCacheLookup(cfg))
+  /** Probes do not update the replacement state or the "used" bits. */
+  val probe = Vec(memWidth, new HTCacheProbe)
   /** A handle to be inserted into (fill) the [[HTCache]]. */
   val fill = Input(Valid(new HandleTranslation()))
   /** A handle to be removed from (invalidated from) the [[HTCache]]. */
@@ -183,6 +195,15 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     when(io.lookup(w).hid.valid && this_lane_hit) {
       used(lookup_hid_set(w))(OHToUInt(real_hits(w))) := true.B
     }
+  }
+
+  /* Probe (per lane): the lookup's tag compare without its side effects. */
+  for (w <- 0 until memWidth) {
+    val (p_tag, p_set) = HTLBUtils.hidSplit(io.probe(w).hid, cfg.idxBits)
+    val p_hits  = VecInit(entries(p_set).map(_.hit(p_tag))).asUInt
+    val p_entry = entries(p_set)(OHToUInt(p_hits)).data
+    io.probe(w).hit  := p_hits.orR && !p_entry.fault
+    io.probe(w).data := TranslatedHandle(p_entry.addr)
   }
 
   /* Insert the handle's translation into the HTCache. */

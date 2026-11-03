@@ -237,4 +237,9 @@ object HandleControl {
 
   /** Store only. Invalidates the HTLB entry of the HID. The data is ignored. */
   val REG_INVALIDATE: Int = 1
+
+  /** Load only. Returns the object base in the HTLB entry of the HID, or 0
+   * if the HTLB has no entry for it or the entry is a handle fault. The load
+   * does not start a walk. */
+  val REG_PROBE: Int = 2
 }

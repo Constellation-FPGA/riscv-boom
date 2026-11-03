@@ -225,17 +225,23 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     xcpt
   }
 
-  /* Control registers. This decode is parallel to the HTLB lookup and does not
-   * read the entries. An unknown register is not valid, so the access goes on
-   * to the DTLB and faults as before. */
+  /** The entry for the request's HID: the object base on a hit, 0 on a miss.
+   * Each HTLB drives it for the REG_PROBE control load. */
+  protected val ctrl_probe = Wire(Vec(memWidth, UInt(xLen.W)))
+
+  /* Control registers. The valid decode is parallel to the HTLB lookup and
+   * does not read the entries. Only the probe data reads them, and the LSU
+   * puts that into a register. An unknown register is not valid, so the
+   * access goes on to the DTLB and faults as before. */
   for (w <- 0 until memWidth) {
     val haddr = io.req(w).bits.haddr
     val reg   = haddr.offset.offset >> log2Ceil(Handle.HANDLE_WIDTH_BYTES)
     val magic = HandleControl.MAGIC.U(xLen.W) | haddr.hid.id
 
     io.ctrl(w).valid := io.htlb_enabled && haddr.isControl() &&
-      io.req(w).bits.cmd === rocket.M_XRD && reg === HandleControl.REG_MAGIC_TEST.U
-    io.ctrl(w).bits  := magic
+      io.req(w).bits.cmd === rocket.M_XRD &&
+      (reg === HandleControl.REG_MAGIC_TEST.U || reg === HandleControl.REG_PROBE.U)
+    io.ctrl(w).bits  := Mux(reg === HandleControl.REG_PROBE.U, ctrl_probe(w), magic)
 
     io.ctrl_st(w) := io.htlb_enabled && haddr.isControl() &&
       io.req(w).bits.cmd === rocket.M_XWR && reg === HandleControl.REG_INVALIDATE.U
@@ -312,6 +318,7 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   io.miss_rdy := true.B
   io.htInvald := false.B
   io.cmd.ready := true.B
+  ctrl_probe.foreach(_ := 0.U) // no entries: every probe misses
 
   io.perf.walk_start := false.B
   io.perf.walk_lane  := 0.U
@@ -432,6 +439,12 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   for (w <- 0 until memWidth) {
     cache.io.lookup(w).hid.valid := io.req(w).valid && !io.req(w).bits.passthrough
     cache.io.lookup(w).hid.bits  := hids(w)
+  }
+
+  // REG_PROBE: the same lookup, without the passthrough mask.
+  for (w <- 0 until memWidth) {
+    cache.io.probe(w).hid := hids(w)
+    ctrl_probe(w) := Mux(cache.io.probe(w).hit, cache.io.probe(w).data.addr.pad(xLen), 0.U)
   }
 
   // Walker arbitration: the lowest lane that misses starts the walk. A miss on

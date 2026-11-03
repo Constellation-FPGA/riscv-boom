@@ -377,11 +377,19 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // the walker is busy does.
   val lane_miss = widthMap(w => io.req(w).fire && htlb_miss(w))
   val any_miss  = lane_miss.asUInt.orR
+  val walk_lane = if (memWidth == 1) 0.U else PriorityEncoder(lane_miss.asUInt)
+  val walk_hid  = hids(walk_lane)
 
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
   // FIXME: Bring these PerfCounters back
   midas.targetutils.PerfCounter(PopCount(widthMap(w => io.req(w).fire && htCache_hit(w) && hm_enabled(w))), "htlb_hit", "htlb_hit")
   midas.targetutils.PerfCounter(any_miss && htw.io.events.l0_hit_in_s_ready, "htlb_l0_hit", "htlb_l0_hit")
+
+  for (w <- 0 until memWidth) {
+    cache.io.lookup(w).en     := hm_enabled(w)
+    cache.io.lookup(w).access := io.req(w).valid
+    cache.io.lookup(w).hid    := hids(w)
+  }
 
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------
@@ -411,6 +419,11 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // The CSR clears itself when hrInvald asserts, so we don't need pulse logic.
   val do_htInval = htw.io.req.ready && !io.htInval.hidZero()
   val inval_all  = io.htInval === HID(Fill(Handle.HANDLE_ID_BITS, 1.B))
+
+  // Prioritize invalidation over handling a miss.
+  htw.io.req.valid := any_miss && !do_htInval
+  htw.io.req.bits  := walk_hid
+  htw.io.htw_enabled := io.htlb_enabled
 
   htw.io.inval.valid := io.clear_htlb || (do_htInval && inval_all)
   htw.io.inval.bits.all := io.clear_htlb || (do_htInval && inval_all)
@@ -449,7 +462,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // ------------------------------------------------------------------------------------------------
 
   val walk_start = htw.io.events.state === HTWState.s_ready && io.htlb_enabled && !do_htInval && any_miss
-  val walk_lane = if (memWidth == 1) 0.U else PriorityEncoder(lane_miss.asUInt)
 
   io.perf.walk_start := walk_start
   io.perf.walk_lane  := walk_lane
@@ -501,7 +513,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
     if (boomParams.enableHTLBSetCounters) {
       for (s <- 0 until cfg.htCacheCfg.nSets) {
-        val walk_hid  = hids(walk_lane)
         midas.targetutils.PerfCounter(walk_start && HTLBUtils.hidSplit(walk_hid, cfg.htCacheCfg.idxBits)._2 === s.U, s"htlb_walk_set$s", s"htlb_walk_set$s")
       }
     }

@@ -70,6 +70,10 @@ final class Handle extends Bundle {
    * provided for completeness more than anything. */
   def isHandle(): Bool = Handle.isHandle(this.handle)
 
+  /** Return true.B if these bits are a control handle. See
+   * [[Handle.isControl]]. */
+  def isControl(): Bool = Handle.isControl(this.handle)
+
   /** Return this handle's Handle ID (HID). */
   def hid: HID = split()._2
 
@@ -130,6 +134,28 @@ object Handle {
     require(addr.getWidth == HANDLE_WIDTH_BITS,
       "Provided address is not wide enough to be a handle.")
     addr === HANDLE_PATTERN
+  }
+
+  /** The bit-pattern of a control handle: an access to the HTLB itself. */
+  private val CONTROL_PATTERN: BitPat = {
+    val hidPat = BitPat("b" + "?" * HANDLE_ID_BITS)
+    val offPat = BitPat("b" + "?" * HANDLE_OFFSET_BITS)
+    BitPat("b11") ## hidPat ## offPat
+  }
+  require(HANDLE_WIDTH_BITS == CONTROL_PATTERN.getWidth,
+    s"Control handle mask must be same length as xLen, xLen={xLen}")
+
+  /** Return true.B if ADDR has the control handle pattern (top bits 11).
+    *
+    * A control handle has the same fields as a handle. The offset field
+    * selects an HTLB control register: register R is at offset R * 8.
+    * This is only meaningful in U-mode with the HTLB on. Elsewhere, top
+    * bits 11 are a normal (supervisor) virtual address.
+    */
+  def isControl(addr: UInt): Bool = {
+    require(addr.getWidth == HANDLE_WIDTH_BITS,
+      "Provided address is not wide enough to be a handle.")
+    addr === CONTROL_PATTERN
   }
 
   /** Convert a [[Handle]] to an address.
@@ -194,4 +220,13 @@ final object HandleException {
     xcpt.handle := handle
     xcpt
   }
+}
+
+/** HTLB control registers. A load from a control handle reads register
+ * (offset / 8). The HTLB completes the load without a memory access.
+ */
+object HandleControl {
+  /** Test register. A read returns MAGIC with the HID in the low 32 bits. */
+  val REG_MAGIC_TEST: Int = 0
+  val MAGIC: BigInt = BigInt("79756b6f00000000", 16) // "yuko" in the high word
 }

@@ -138,6 +138,13 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     hid_set :+ r_idx,
     widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
 
+  // No victim handling needed for simplification, just overwrite
+  when(io.fill.valid) {
+    val entryData = Wire(new HTLBEntryData())
+    entryData.addr := io.fill.bits.addr
+    entries(r_idx)(repl_way).insert(r_tag, entryData)
+  }
+
   for (w <- 0 until memWidth) {
     io.lookup(w).hit  := real_hits(w).orR
     io.lookup(w).way  := hit_way(w)

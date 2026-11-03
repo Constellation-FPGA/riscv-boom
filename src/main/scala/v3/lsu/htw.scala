@@ -204,6 +204,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
   io.req.ready := state === HTWState.s_ready
   io.fill.valid := state === HTWState.s_wait_ht_entry && mem_resp_valid
+  io.fill.bits.hid := hid_req
+  // io.fill.bits.data.addr := mem_resp_data.asTypeOf(new HTE).addr
+  io.fill.bits.addr := mem_resp_data.asTypeOf(new HTE).addr
+
   // val plru_fill = state === HTWState.s_wait_ht_entry && mem_resp_valid
 
   val walk_hid = io.req.bits

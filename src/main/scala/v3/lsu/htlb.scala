@@ -366,6 +366,12 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     io.req(w).valid && hm_enabled(w) && !htCache_hit(w)
   })
 
+  for (w <- 0 until memWidth) {
+    cache.io.lookup(w).en     := hm_enabled(w)
+    cache.io.lookup(w).access := io.req(w).valid
+    cache.io.lookup(w).hid    := hids(w)
+  }
+
   // Walker arbitration: the lowest lane that misses starts the walk. A miss on
   // another lane in the same cycle reports a miss and retries, as a miss while
   // the walker is busy does.

@@ -33,6 +33,16 @@ final class HTFill(implicit p: Parameters) extends BoomBundle()(p) {
   val addr = UInt(maxSVAddrBits.W)
 }
 
+/** IO class meant for tracking performance events from the [[HTCache]]. */
+final class HTWPerf extends Bundle {
+  /** Raised to true.B when a fill goes out. */
+  val fill = Output(Bool())
+  // /** Raised to true.B when the walk starts. */
+  // val walk_start = Output(Bool())
+  // /** Raised to true.B when there is a walk lane. */
+  // val walk_lane = Output(Bool())
+}
+
 /** Describes the configuration of an [[HTW]].
  *
  * @param pht_enabled True if the address in the htBase CSR is physical.
@@ -85,6 +95,7 @@ final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
    * to have PerfCounters in the upper-level [[YukonHTLB]]. */
 // TODO: Rename this to perf!
   val events = Output(new HTWEvents())
+  val perf = Output(new HTWPerf())
   /** Connection to memory to translate from the handle table in-memory. */
   val mem = new HellaCacheIO
 }
@@ -207,6 +218,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.fill.bits.hid := hid_req
   // io.fill.bits.data.addr := mem_resp_data.asTypeOf(new HTE).addr
   io.fill.bits.addr := mem_resp_data.asTypeOf(new HTE).addr
+
+  io.perf.fill := state === HTWState.s_wait_ht_entry && mem_resp_valid
+  // io.perf.walk_start := walk_start
+  // io.perf.walk_lane := walk_lane
 
   // val plru_fill = state === HTWState.s_wait_ht_entry && mem_resp_valid
 

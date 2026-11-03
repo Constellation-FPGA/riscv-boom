@@ -114,7 +114,7 @@ object Handle {
     * translation.
     */
   def isHandle(addr: UInt): Bool = {
-    assert(addr.getWidth == HANDLE_WIDTH_BITS,
+    require(addr.getWidth == HANDLE_WIDTH_BITS,
       "Provided address is not wide enough to be a handle.")
     addr === HANDLE_PATTERN
   }

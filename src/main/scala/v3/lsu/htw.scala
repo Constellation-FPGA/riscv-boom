@@ -188,7 +188,8 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   val next_state = WireDefault(state)
   state := Mux(io.htw_enabled, next_state, HTWState.s_ready)
   io.events.state := state
-  io.ready := HTWState.waiting(state)
+  // FIXME: io.ready can be removed because io.req.ready exists too.
+  io.ready := state === HTWState.s_ready
 
   timeline.trackState("htlb.state", "mem_req", io.mem.req.valid)
   timeline.trackState("htlb.state", "mem_resp", io.mem.resp.valid)

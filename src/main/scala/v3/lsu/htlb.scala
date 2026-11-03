@@ -329,6 +329,11 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // The lookup and the walker serve lane 0 only.
   require(memWidth == 1, s"YukonHTLB supports memWidth == 1 only, not $memWidth")
 
+  for (w <- 0 until memWidth) {
+    io.resp(w).handle_fault.ld := false.B
+    io.resp(w).handle_fault.st := false.B
+  }
+
   /* The HTW & HTCache are in the same clock and reset domain as the HTLB.
    * This means that both modules' internal storage will be reset at the same
    * time as the outer YukonHTLB. So we do not need any special logic for
@@ -341,9 +346,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   cache.io.fill := htw.io.fill
 
   io.perf.fill := htw.io.perf.fill
-
-  val htCache_hit = widthMap(w => cache.io.lookup(w).hit)
-  val htCache_way = widthMap(w => cache.io.lookup(w).way)
 
   for (w <- 0 until memWidth) {
     io.resp(w).handle_fault.ld := false.B

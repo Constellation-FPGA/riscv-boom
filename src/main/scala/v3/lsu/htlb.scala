@@ -162,6 +162,11 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val clear_htlb = Input(Bool())
     /** The size of the handle table in memory in bytes. */
     val htSize = Input(UInt(xLen.W))
+    /** Control register reads. Valid when [[HTLBReq.haddr]] is a control
+     * handle, [[HTLBReq.cmd]] is a read, and the HTLB has the register. The
+     * bits are the full 64-bit register. This ignores io.req.valid; the LSU
+     * qualifies it with the load that fires. */
+    val ctrl = Output(Vec(memWidth, Valid(UInt(xLen.W))))
   })
 
   /** Convert a handle to a virtual address.
@@ -205,6 +210,19 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     //   assert(false.B, "Handle command was NEITHER load nor store!")
     // }
     xcpt
+  }
+
+  /* Control registers. This decode is parallel to the HTLB lookup and does not
+   * read the entries. An unknown register is not valid, so the access goes on
+   * to the DTLB and faults as before. */
+  for (w <- 0 until memWidth) {
+    val haddr = io.req(w).bits.haddr
+    val reg   = haddr.offset.offset >> log2Ceil(Handle.HANDLE_WIDTH_BYTES)
+    val magic = HandleControl.MAGIC.U(xLen.W) | haddr.hid.id
+
+    io.ctrl(w).valid := io.htlb_enabled && haddr.isControl() &&
+      io.req(w).bits.cmd === rocket.M_XRD && reg === HandleControl.REG_MAGIC_TEST.U
+    io.ctrl(w).bits  := magic
   }
 
   assert(implies(io.mem.req.valid,

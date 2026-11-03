@@ -832,13 +832,31 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       htlb.io.req(w).valid && (htlb.io.resp(w).miss || !htlb.io.req(w).ready),
       false.B))
 
+  /* Control loads. The HTLB serves a load from a control handle, so the load
+   * uses neither the DTLB nor the dcache. ctrl_resp holds the result until the
+   * writeback port is free. A control load that finds ctrl_resp full reports a
+   * miss and retries through the HTLB, as an HTLB miss does. The select
+   * signals come from the address bits only, not from the HTLB entries. */
+  class CtrlResp extends Bundle {
+    val uop  = new MicroOp
+    val addr = UInt(log2Ceil(coreDataBytes).W)
+    val data = UInt(xLen.W)
+    val mem  = Bool() // the load is in its mem cycle: too early to write back
+  }
+  val ctrl_resp = RegInit(0.U.asTypeOf(Valid(new CtrlResp)))
+
+  val exe_ctrl_ld = LSU.widthMap(memWidth)(w =>
+    (will_fire_load_incoming(w) || will_fire_load_retry(w)) && htlb.io.ctrl(w).valid)
+  val exe_ctrl_take = LSU.widthMap(memWidth)(w =>
+    exe_ctrl_ld(w) && !ctrl_resp.valid && !(0 until w).map(exe_ctrl_ld(_)).foldLeft(false.B)(_||_))
+
   for (w <- 0 until memWidth) {
     /* Alaska's handles are NOT virtual addresses. They cannot be dispatched to
      * the TLB.
      * If one slips through somehow, the 64 bits of the handle will be truncated
      * down to a width of vaddrBitsExtended, which could hit a real mapping or
      * start a page walk. No matter what, that's a bad time. */
-    dtlb.io.req(w).valid            := exe_tlb_valid(w) && !exe_htlb_miss(w)
+    dtlb.io.req(w).valid            := exe_tlb_valid(w) && !exe_htlb_miss(w) && !exe_ctrl_ld(w)
     dtlb.io.req(w).bits.vaddr       := exe_tlb_vaddr(w)
     dtlb.io.req(w).bits.size        := exe_size(w)
     dtlb.io.req(w).bits.cmd         := exe_cmd(w)
@@ -1004,7 +1022,9 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   }
 
   /* NOTE: exe_tlb_miss also tracks if there was a miss in/by the HTLB! */
-  val exe_tlb_miss  = LSU.widthMap(memWidth)(w => exe_tlb_valid(w) && (dtlb.io.resp(w).miss || exe_htlb_miss(w) || !dtlb.io.req(w).ready))
+  val exe_tlb_miss  = LSU.widthMap(memWidth)(w => exe_tlb_valid(w) &&
+    Mux(exe_ctrl_ld(w), !exe_ctrl_take(w),
+      dtlb.io.resp(w).miss || exe_htlb_miss(w) || !dtlb.io.req(w).ready))
   val exe_tlb_paddr = LSU.widthMap(memWidth)(w => Cat(dtlb.io.resp(w).paddr(paddrBits-1,corePgIdxBits),
                                         exe_tlb_vaddr(w)(corePgIdxBits-1,0)))
   val exe_tlb_uncacheable = LSU.widthMap(memWidth)(w => !(dtlb.io.resp(w).cacheable))
@@ -1111,14 +1131,14 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     io.dmem.s1_kill(w) := false.B
 
     when (will_fire_load_incoming(w)) {
-      dmem_req(w).valid      := !exe_tlb_miss(w) && !exe_tlb_uncacheable(w)
+      dmem_req(w).valid      := !exe_tlb_miss(w) && !exe_tlb_uncacheable(w) && !exe_ctrl_ld(w)
       dmem_req(w).bits.addr  := exe_tlb_paddr(w)
       dmem_req(w).bits.uop   := exe_tlb_uop(w)
 
       s0_executing_loads(ldq_incoming_idx(w)) := dmem_req_fire(w)
       assert(!ldq_incoming_e(w).bits.executed)
     } .elsewhen (will_fire_load_retry(w)) {
-      dmem_req(w).valid      := !exe_tlb_miss(w) && !exe_tlb_uncacheable(w)
+      dmem_req(w).valid      := !exe_tlb_miss(w) && !exe_tlb_uncacheable(w) && !exe_ctrl_ld(w)
       dmem_req(w).bits.addr  := exe_tlb_paddr(w)
       dmem_req(w).bits.uop   := exe_tlb_uop(w)
 
@@ -1186,12 +1206,14 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     when (will_fire_load_incoming(w) || will_fire_load_retry(w))
     {
       val ldq_idx = Mux(will_fire_load_incoming(w), ldq_incoming_idx(w), ldq_retry_idx)
-      ldq(ldq_idx).bits.addr.valid          := !hf_ld(w)
-      ldq(ldq_idx).bits.addr.bits           := Mux(exe_htlb_miss(w), exe_htlb_vaddr(w),
+      // A control load that ctrl_resp takes has no address: no search,
+      // wakeup or retry may use it. Writeback sets executed and succeeded.
+      ldq(ldq_idx).bits.addr.valid          := !hf_ld(w) && !exe_ctrl_take(w)
+      ldq(ldq_idx).bits.addr.bits           := Mux(exe_htlb_miss(w) || exe_ctrl_ld(w), exe_htlb_vaddr(w),
         Mux(exe_tlb_miss(w), exe_tlb_vaddr(w), exe_tlb_paddr(w)))
       ldq(ldq_idx).bits.uop.pdst            := exe_tlb_uop(w).pdst
       ldq(ldq_idx).bits.addr_is_virtual     := exe_tlb_miss(w)
-      ldq(ldq_idx).bits.addr_is_uncacheable := exe_tlb_uncacheable(w) && !exe_tlb_miss(w)
+      ldq(ldq_idx).bits.addr_is_uncacheable := exe_tlb_uncacheable(w) && !exe_tlb_miss(w) && !exe_ctrl_ld(w)
       ldq(ldq_idx).bits.is_handle           := exe_is_handle(w)
 
       assert(!(will_fire_load_incoming(w) && ldq_incoming_e(w).bits.addr.valid),
@@ -1283,6 +1305,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // A hella request needs the same lane's TLB slot, so it never fires with one,
   // and masking fired_hella_incoming here would not change any result.
   val mem_tlb_miss             = LSU.widthMap(memWidth)(w => RegNext(exe_tlb_miss(w)))
+  val mem_ctrl_take            = RegNext(exe_ctrl_take)
   val mem_tlb_uncacheable      = RegNext(exe_tlb_uncacheable)
   val mem_paddr                = RegNext(LSU.widthMap(memWidth)(w => dmem_req(w).bits.addr))
 
@@ -1373,7 +1396,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // We translated a store last cycle
   val do_st_search = LSU.widthMap(memWidth)(w => (fired_stad_incoming(w) || fired_sta_incoming(w) || fired_sta_retry(w)) && !mem_tlb_miss(w))
   // We translated a load last cycle
-  val do_ld_search = LSU.widthMap(memWidth)(w => ((fired_load_incoming(w) || fired_load_retry(w)) && !mem_tlb_miss(w)) ||
+  // A control load has no memory address, so it does not search.
+  val do_ld_search = LSU.widthMap(memWidth)(w => ((fired_load_incoming(w) || fired_load_retry(w)) && !mem_tlb_miss(w) && !mem_ctrl_take(w)) ||
                      fired_load_wakeup(w))
   // We are making a local line visible to other harts
   val do_release_search = LSU.widthMap(memWidth)(w => fired_release(w))
@@ -1748,6 +1772,45 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       }
     }
   }
+
+  // Control load writeback on lane 0, when no dcache response or forward uses
+  // the port. The earliest writeback is the wb cycle, as for a dcache hit. An
+  // earlier writeback wakes the dependents before spec_ld_wakeup does, and the
+  // ld_miss that follows makes them wait for a wakeup that never comes.
+  val ctrl_live  = ctrl_resp.valid && !IsKilledByBranch(io.core.brupdate, ctrl_resp.bits.uop) &&
+                   !io.core.exception
+  val ctrl_wb    = ctrl_live && !ctrl_resp.bits.mem && !dmem_resp_fired(0) && !wb_forward_valid(0)
+  val ctrl_uop   = ctrl_resp.bits.uop
+  val ctrl_data  = new freechips.rocketchip.rocket.LoadGen(ctrl_uop.mem_size, ctrl_uop.mem_signed,
+                     ctrl_resp.bits.addr, ctrl_resp.bits.data, false.B, coreDataBytes).data
+  when (ctrl_wb) {
+    io.core.exe(0).iresp.valid     := ctrl_uop.dst_rtype === RT_FIX
+    io.core.exe(0).fresp.valid     := ctrl_uop.dst_rtype === RT_FLT
+    io.core.exe(0).iresp.bits.uop  := ctrl_uop
+    io.core.exe(0).fresp.bits.uop  := ctrl_uop
+    io.core.exe(0).iresp.bits.data := ctrl_data
+    io.core.exe(0).fresp.bits.data := ctrl_data
+
+    ldq(ctrl_uop.ldq_idx).bits.executed      := true.B
+    ldq(ctrl_uop.ldq_idx).bits.succeeded     := true.B
+    ldq(ctrl_uop.ldq_idx).bits.debug_wb_data := ctrl_data
+  }
+
+  ctrl_resp.bits.uop.br_mask := GetNewBrMask(io.core.brupdate, ctrl_uop)
+  ctrl_resp.bits.mem         := false.B
+  when (ctrl_wb || !ctrl_live) {
+    ctrl_resp.valid := false.B
+  }
+  for (w <- 0 until memWidth) {
+    when (exe_ctrl_take(w)) {
+      ctrl_resp.valid     := !IsKilledByBranch(io.core.brupdate, exe_tlb_uop(w)) && !io.core.exception
+      ctrl_resp.bits.uop  := UpdateBrMask(io.core.brupdate, exe_tlb_uop(w))
+      ctrl_resp.bits.addr := exe_htlb_vaddr(w)(log2Ceil(coreDataBytes)-1, 0)
+      ctrl_resp.bits.data := htlb.io.ctrl(w).bits
+      ctrl_resp.bits.mem  := true.B
+    }
+  }
+  midas.targetutils.PerfCounter(ctrl_wb, "htlb_ctrl_load", "htlb_ctrl_load")
 
   // Initially assume the speculative load wakeup failed
   io.core.ld_miss         := RegNext(io.core.spec_ld_wakeup.map(_.valid).reduce(_||_))

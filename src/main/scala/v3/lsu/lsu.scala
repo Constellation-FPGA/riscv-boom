@@ -213,6 +213,7 @@ class STQEntry(implicit p: Parameters) extends BoomBundle()(p)
 
   val debug_wb_data       = UInt(xLen.W)
   val is_handle           = Bool()
+  val is_ctrl             = Bool() // control store: addr is the control handle, the HTLB runs it
 }
 
 class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
@@ -387,6 +388,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
       stq(st_enq_idx).bits.data.valid := false.B
       stq(st_enq_idx).bits.committed  := false.B
       stq(st_enq_idx).bits.succeeded  := false.B
+      stq(st_enq_idx).bits.is_ctrl    := false.B
 
       assert (st_enq_idx === io.core.dis_uops(w).bits.stq_idx, "[lsu] mismatch enq store tag.")
       assert (!stq(st_enq_idx).valid, "[lsu] Enqueuing uop is overwriting stq entries")
@@ -850,13 +852,20 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val exe_ctrl_take = LSU.widthMap(memWidth)(w =>
     exe_ctrl_ld(w) && !ctrl_resp.valid && !(0 until w).map(exe_ctrl_ld(_)).foldLeft(false.B)(_||_))
 
+  /* Control stores. The address stage only marks the STQ entry. The command
+   * runs at store commit (see dmem_req below), so it never runs on a wrong
+   * path. A control store never misses, so it never retries. */
+  val exe_ctrl_st = LSU.widthMap(memWidth)(w =>
+    (will_fire_sta_incoming(w) || will_fire_stad_incoming(w)) && htlb.io.ctrl_st(w))
+  midas.targetutils.PerfCounter(PopCount(exe_ctrl_st), "htlb_ctrl_st_addr", "htlb_ctrl_st_addr")
+
   for (w <- 0 until memWidth) {
     /* Alaska's handles are NOT virtual addresses. They cannot be dispatched to
      * the TLB.
      * If one slips through somehow, the 64 bits of the handle will be truncated
      * down to a width of vaddrBitsExtended, which could hit a real mapping or
      * start a page walk. No matter what, that's a bad time. */
-    dtlb.io.req(w).valid            := exe_tlb_valid(w) && !exe_htlb_miss(w) && !exe_ctrl_ld(w)
+    dtlb.io.req(w).valid            := exe_tlb_valid(w) && !exe_htlb_miss(w) && !exe_ctrl_ld(w) && !exe_ctrl_st(w)
     dtlb.io.req(w).bits.vaddr       := exe_tlb_vaddr(w)
     dtlb.io.req(w).bits.size        := exe_size(w)
     dtlb.io.req(w).bits.cmd         := exe_cmd(w)
@@ -1023,7 +1032,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   /* NOTE: exe_tlb_miss also tracks if there was a miss in/by the HTLB! */
   val exe_tlb_miss  = LSU.widthMap(memWidth)(w => exe_tlb_valid(w) &&
-    Mux(exe_ctrl_ld(w), !exe_ctrl_take(w),
+    Mux(exe_ctrl_ld(w) || exe_ctrl_st(w), exe_ctrl_ld(w) && !exe_ctrl_take(w),
       dtlb.io.resp(w).miss || exe_htlb_miss(w) || !dtlb.io.req(w).ready))
   val exe_tlb_paddr = LSU.widthMap(memWidth)(w => Cat(dtlb.io.resp(w).paddr(paddrBits-1,corePgIdxBits),
                                         exe_tlb_vaddr(w)(corePgIdxBits-1,0)))
@@ -1120,6 +1129,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
   val s0_executing_loads = WireInit(VecInit((0 until numLdqEntries).map(x=>false.B)))
 
+  val ctrl_st_handle = Handle(stq_commit_e.bits.addr.bits)
+  htlb.io.cmd.valid     := false.B
+  htlb.io.cmd.bits.hid  := ctrl_st_handle.hid
+  htlb.io.cmd.bits.reg  := ctrl_st_handle.offset.offset >> log2Ceil(Handle.HANDLE_WIDTH_BYTES)
+  htlb.io.cmd.bits.data := stq_commit_e.bits.data.bits
+
 
   for (w <- 0 until memWidth) {
     dmem_req(w).valid := false.B
@@ -1144,6 +1159,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
 
       s0_executing_loads(ldq_retry_idx) := dmem_req_fire(w)
       assert(!ldq_retry_e.bits.executed)
+    } .elsewhen (will_fire_store_commit(w) && stq_commit_e.bits.is_ctrl) {
+      // At stq_head, all older stores have their dcache ack, so no NACK can
+      // rewind stq_execute_head and run the command again.
+      htlb.io.cmd.valid := stq_execute_head === stq_head
+      stq_execute_head  := Mux(htlb.io.cmd.fire, WrapInc(stq_execute_head, numStqEntries), stq_execute_head)
+      stq(stq_execute_head).bits.succeeded := htlb.io.cmd.fire
     } .elsewhen (will_fire_store_commit(w)) {
       dmem_req(w).valid         := true.B
       dmem_req(w).bits.addr     := stq_commit_e.bits.addr.bits
@@ -1226,11 +1247,12 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         stq_incoming_idx(w), stq_retry_idx)
 
       stq(stq_idx).bits.addr.valid := !(pf_st(w) || hf_st(w)) // Prevent AMOs from executing!
-      stq(stq_idx).bits.addr.bits  := Mux(exe_htlb_miss(w), exe_htlb_vaddr(w),
+      stq(stq_idx).bits.addr.bits  := Mux(exe_htlb_miss(w) || exe_ctrl_st(w), exe_htlb_vaddr(w),
         Mux(exe_tlb_miss(w), exe_tlb_vaddr(w), exe_tlb_paddr(w)))
       stq(stq_idx).bits.uop.pdst   := exe_tlb_uop(w).pdst // Needed for AMOs
       stq(stq_idx).bits.addr_is_virtual := exe_tlb_miss(w)
       stq(stq_idx).bits.is_handle       := exe_is_handle(w)
+      stq(stq_idx).bits.is_ctrl         := exe_ctrl_st(w)
 
       assert(!(will_fire_sta_incoming(w) && stq_incoming_e(w).bits.addr.valid),
         "[lsu] Incoming store is overwriting a valid address")
@@ -1306,6 +1328,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // and masking fired_hella_incoming here would not change any result.
   val mem_tlb_miss             = LSU.widthMap(memWidth)(w => RegNext(exe_tlb_miss(w)))
   val mem_ctrl_take            = RegNext(exe_ctrl_take)
+  val mem_ctrl_st              = RegNext(exe_ctrl_st)
   val mem_tlb_uncacheable      = RegNext(exe_tlb_uncacheable)
   val mem_paddr                = RegNext(LSU.widthMap(memWidth)(w => dmem_req(w).bits.addr))
 
@@ -1394,7 +1417,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   // We have the opportunity to kill a request we sent last cycle. Use it wisely!
 
   // We translated a store last cycle
-  val do_st_search = LSU.widthMap(memWidth)(w => (fired_stad_incoming(w) || fired_sta_incoming(w) || fired_sta_retry(w)) && !mem_tlb_miss(w))
+  // A control store has no memory address, so it does not search.
+  val do_st_search = LSU.widthMap(memWidth)(w => (fired_stad_incoming(w) || fired_sta_incoming(w) || fired_sta_retry(w)) && !mem_tlb_miss(w) && !mem_ctrl_st(w))
   // We translated a load last cycle
   // A control load has no memory address, so it does not search.
   val do_ld_search = LSU.widthMap(memWidth)(w => ((fired_load_incoming(w) || fired_load_retry(w)) && !mem_tlb_miss(w) && !mem_ctrl_take(w)) ||
@@ -1531,6 +1555,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     val dword_addr_matches = LSU.widthMap(memWidth)(w =>
                              ( stq(i).bits.addr.valid      &&
                               !stq(i).bits.addr_is_virtual &&
+                              !stq(i).bits.is_ctrl         && // compares only corePAddrBits, so it can alias
                               (s_addr(corePAddrBits-1,3) === lcam_addr(w)(corePAddrBits-1,3))))
     val write_mask = GenByteMask(s_addr, s_uop.mem_size)
     for (w <- 0 until memWidth) {

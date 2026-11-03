@@ -224,9 +224,17 @@ final object HandleException {
 
 /** HTLB control registers. A load from a control handle reads register
  * (offset / 8). The HTLB completes the load without a memory access.
+ *
+ * A store to a control handle runs a command. The HTLB runs it after the
+ * ROB commits the store and all older stores are done, so a command never
+ * runs on a wrong path. Younger instructions can still see the old HTLB
+ * state: software puts a FENCE after the store to order them.
  */
 object HandleControl {
   /** Test register. A read returns MAGIC with the HID in the low 32 bits. */
   val REG_MAGIC_TEST: Int = 0
   val MAGIC: BigInt = BigInt("79756b6f00000000", 16) // "yuko" in the high word
+
+  /** Store only. Invalidates the HTLB entry of the HID. The data is ignored. */
+  val REG_INVALIDATE: Int = 1
 }

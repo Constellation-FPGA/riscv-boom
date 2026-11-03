@@ -340,6 +340,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   io.miss_rdy := htw.io.ready
   cache.io.fill := htw.io.fill
 
+  io.perf.fill := htw.io.perf.fill
+
   val htCache_hit = widthMap(w => cache.io.lookup(w).hit)
   val htCache_way = widthMap(w => cache.io.lookup(w).way)
 
@@ -367,8 +369,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // the walker is busy does.
   val lane_miss = widthMap(w => io.req(w).fire && htlb_miss(w))
   val any_miss  = lane_miss.asUInt.orR
-  val walk_lane = if (memWidth == 1) 0.U else PriorityEncoder(lane_miss.asUInt)
-  val walk_hid  = hids(walk_lane)
 
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
   // FIXME: Bring these PerfCounters back
@@ -440,6 +440,12 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------
 
+  val walk_start = htw.io.events.state === HTWState.s_ready && io.htlb_enabled && !do_htInval && any_miss
+  val walk_lane = if (memWidth == 1) 0.U else PriorityEncoder(lane_miss.asUInt)
+
+  io.perf.walk_start := walk_start
+  io.perf.walk_lane  := walk_lane
+
   // FIXME: Can these PerfCounters go into the child modules?
   // There seem to be an awful lot of connections that must be made to grab
   // the relevant logics to trigger the PerfCounters.
@@ -460,7 +466,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     // midas.targetutils.PerfCounter(fill && victim_valid, "htlb_evict_valid", "htlb_evict_valid")
     // midas.targetutils.PerfCounter(fill && victim_valid && !victim_used, "htlb_evict_unused", "htlb_evict_unused")
 
-    val walk_start = htw.io.events.state === HTWState.s_ready && io.htlb_enabled && !do_htInval && any_miss
     // Misses in the cycle a walk starts that did not start it (a lower lane did).
     val miss_walker_taken = widthMap(w => lane_miss(w) && walk_start && walk_lane =/= w.U)
     val miss_busy = widthMap(w => lane_miss(w) && htw.io.events.state =/= HTWState.s_ready)
@@ -488,6 +493,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
     if (boomParams.enableHTLBSetCounters) {
       for (s <- 0 until cfg.htCacheCfg.nSets) {
+        val walk_hid  = hids(walk_lane)
         midas.targetutils.PerfCounter(walk_start && HTLBUtils.hidSplit(walk_hid, cfg.htCacheCfg.idxBits)._2 === s.U, s"htlb_walk_set$s", s"htlb_walk_set$s")
       }
     }

@@ -338,6 +338,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val htw = Module(new HTW(cfg.htwCfg))
   htw.io.htBase := io.htBase
   htw.io.mem <> io.mem
+  io.miss_rdy := htw.io.ready
   cache.io.fill := htw.io.fill
 
   val htCache_hit = widthMap(w => cache.io.lookup(w).hit)

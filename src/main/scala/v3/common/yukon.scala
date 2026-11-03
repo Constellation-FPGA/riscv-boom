@@ -80,19 +80,25 @@ object Handle {
   val HANDLE_WIDTH_BYTES: Int = HANDLE_WIDTH_BITS / 8
   // require(xLen == HANDLE_WIDTH_BITS, "Handles must be xLen wide")
 
-  /** The bit-pattern that handles must have. */
-  private val HANDLE_PATTERN: BitPat = {
-    // The top bit must be set and the 2nd-most-top bit must be clear.
-    BitPat("b10??????????????????????????????????????????????????????????????")
-  }
-  require(HANDLE_WIDTH_BITS == HANDLE_PATTERN.getWidth,
-    s"Handle mask must be same length as xLen, xLen={xLen}")
-
   private val HANDLE_MAGIC_BITS: Int = 2
   val HANDLE_ID_BITS: Int = 30
   val HANDLE_OFFSET_BITS: Int = 32
+
   require(HANDLE_WIDTH_BITS == (HANDLE_MAGIC_BITS + HANDLE_ID_BITS + HANDLE_OFFSET_BITS),
     s"All parts of a handle must have the same width as xLen, xLen={xLen}")
+
+  /** The "magic" bit pattern that addresses must have to be considered a
+    * handle. */
+  private val HANDLE_MAGIC = BitPat("b10")
+
+  /** The bit-pattern that handles must have. */
+  private val HANDLE_PATTERN: BitPat = {
+    val hidPat = BitPat("b" + "?" * HANDLE_ID_BITS)
+    val offPat = BitPat("b" + "?" * HANDLE_OFFSET_BITS)
+    HANDLE_MAGIC ## hidPat ## offPat
+  }
+  require(HANDLE_WIDTH_BITS == HANDLE_PATTERN.getWidth,
+    s"Handle mask must be same length as xLen, xLen={xLen}")
 
   def apply(haddr: UInt): Handle = {
     require(haddr.getWidth == Handle.HANDLE_WIDTH_BITS,

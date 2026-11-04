@@ -136,20 +136,18 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     }
     else 0.U
 
-  // Hit Logic (per lane)
-  // FIXME: Can we remove the asUInt call here?
-  val real_hits = widthMap(w => VecInit(entries(hid_set(w)).map(io.lookup(w).en && _.hit(hid_tag(w)))).asUInt)
-  // val real_hits = {
-  //   def blah(memLane: Int) = io.lookup(memLane).en && _.hit(hid_tag(memLane))
-  //   widthMap(w => VecInit(entries(hid_set(w)).map(blah)).asUInt)
-  // }
-  val hit_way = widthMap(w => OHToUInt(real_hits(w)))
+  /* Hit Logic (per lane)
+   * Hits per lane (memWidth), per set, and per way. Produces a true.B when the
+   * HTCache Entry in the specified lane-set-way combination is a hit.
+   * NOTE: This produces a Vec(Vec(Bool))*/
+  val real_hits = widthMap(w => VecInit(entries(hid_set(w)).map(io.lookup(w).en && _.hit(hid_tag(w)))))
+  val hit_way = widthMap(w => OHToUInt(real_hits(w).asUInt))
 
   // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt
   // (OH1ToUInt gave way k+1). A fill marks the new entry as recently used, so
   // the next fill in the set does not evict it before the retry. access()
   // applies the updates in order: lane 0, lane 1, ..., then the fill last.
-  val plru_hit = widthMap(w => io.lookup(w).access && real_hits(w).orR)
+  val plru_hit = widthMap(w => io.lookup(w).access && real_hits(w).asUInt.orR)
   l1_plru.access(
     hid_set :+ r_idx,
     widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
@@ -162,7 +160,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   }
 
   for (w <- 0 until memWidth) {
-    io.lookup(w).hit  := real_hits(w).orR
+    io.lookup(w).hit  := real_hits(w).asUInt.orR
     io.lookup(w).way  := hit_way(w)
     // FIXME: We should return a better class than just UInt
     // This could be HTLBEntryData, if that class is moved to file-level.

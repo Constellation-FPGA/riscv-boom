@@ -93,11 +93,23 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     def invalidate() = { valid := false.B }
   }
 
+  final object Entry {
+    def apply() = {
+      val e = Wire(new Entry)
+      e.valid := false.B
+      e.tag := DontCare
+      e.data := DontCare
+      e
+    }
+  }
+
   /* FIXME: Move all definitions of widthMap out to a common object method.
    * Perhaps LSU.widthMap? */
   def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
 
-  val entries = Reg(Vec(cfg.nSets, Vec(cfg.nWays, new Entry())))
+  /* NOTE: RegInit is important so that reset signals actually reset the cache
+   * structure. */
+  val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(Entry()))
   val l1_plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
 
   val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)

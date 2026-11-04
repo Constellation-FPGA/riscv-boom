@@ -174,8 +174,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   }
 
   // Lost entries. "used" is set on a hit and cleared on a fill. The fill write is last, so a fill wins.
-  val used = RegInit(VecInit(Seq.fill(cfg.nSets)(VecInit(Seq.fill(cfg.nWays)(false.B)))))
-  // val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
+  val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
   io.used := used
   for (w <- 0 until memWidth) {
     when(io.lookup(w).en && io.lookup(w).hit) {

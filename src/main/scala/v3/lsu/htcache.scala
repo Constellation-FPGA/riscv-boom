@@ -173,6 +173,10 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     }
   }
 
+  when(reset.asBool || (io.inval.valid && io.inval.bits.all)) {
+    entries.foreach(set => set.foreach(way => way.invalidate()))
+  }
+
   // Lost entries. "used" is set on a hit and cleared on a fill. The fill write is last, so a fill wins.
   val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
   io.used := used

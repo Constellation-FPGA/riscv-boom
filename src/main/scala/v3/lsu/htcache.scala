@@ -108,7 +108,11 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
 
   /* NOTE: RegInit is important so that reset signals actually reset the cache
-   * structure. */
+   * structure.
+   *
+   * XXX: entries is shared between ALL lanes (memWidth)! This will be
+   * problematic if the memWidth grows too high because we will end up making
+   * a very high-port count memory block! */
   val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(Entry()))
   val l1_plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
 

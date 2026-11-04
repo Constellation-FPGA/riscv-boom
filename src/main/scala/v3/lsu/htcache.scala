@@ -72,12 +72,12 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   /** The data cached by the [[HTCache]]. */
   // TODO: Rename this class.
-  class HTLBEntryData() extends Bundle() {
+  final class HTLBEntryData() extends Bundle() {
     val addr = UInt(maxSVAddrBits.W) // Virtual object base.
   }
 
   /** A handle table cache entry. */
-  class Entry extends Bundle {
+  final class Entry extends Bundle {
     val tag = UInt(tagBits.W)
     val data = new HTLBEntryData()
     val valid = Bool()

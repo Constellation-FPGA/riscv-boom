@@ -38,9 +38,7 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
     /** The way that had a hit. Meaningless when [[hit]] is false.B. */
     val way = Output(UInt(log2Ceil(cfg.nWays).W))
     /** The hit entry's data. Meaningless when [[hit]] is false.B. */
-    // val data = Output(new HTLBEntryData)
-    // data is the same as HTFill.addr
-    val data = Output(UInt(maxSVAddrBits.W))
+    val data = Output(new TranslatedHandle())
     // FIXME: Should way & data become a bundle and be "hidden" inside a Valid?
   }
 
@@ -69,24 +67,18 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   private val idxBits = log2Ceil(cfg.nSets)
   private val tagBits = Handle.HANDLE_ID_BITS - idxBits
 
-  /** The data cached by the [[HTCache]]. */
-  // TODO: Rename this class.
-  final class HTLBEntryData() extends Bundle() {
-    val addr = UInt(maxSVAddrBits.W) // Virtual object base.
-  }
-
   /** A handle table cache entry. */
   final class Entry extends Bundle {
     val tag = UInt(tagBits.W)
-    val data = new HTLBEntryData()
+    val data = new TranslatedHandle()
     val valid = Bool()
 
     def hit(tag: UInt) = { valid && this.tag === tag }
 
-    def insert(tag: UInt, entry: HTLBEntryData) = {
+    def insert(tag: UInt, translation: TranslatedHandle) = {
       this.tag := tag
       valid := true.B
-      data := entry
+      data := translation
     }
 
     def invalidate() = { valid := false.B }
@@ -153,17 +145,14 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   // No victim handling needed for simplification, just overwrite
   when(io.fill.valid) {
-    val entryData = Wire(new HTLBEntryData())
-    entryData.addr := io.fill.bits.addr
-    entries(r_idx)(repl_way).insert(r_tag, entryData)
+    val translation = io.fill.bits.xlation
+    entries(r_idx)(repl_way).insert(r_tag, translation)
   }
 
   for (w <- 0 until memWidth) {
     io.lookup(w).hit  := real_hits(w).asUInt.orR
     io.lookup(w).way  := hit_way(w)
-    // FIXME: We should return a better class than just UInt
-    // This could be HTLBEntryData, if that class is moved to file-level.
-    io.lookup(w).data := entries(hid_set(w))(hit_way(w)).data.addr
+    io.lookup(w).data := entries(hid_set(w))(hit_way(w)).data
   }
 
   /* Invalidation */

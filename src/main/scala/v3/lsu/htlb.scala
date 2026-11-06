@@ -79,6 +79,26 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
   val handle_fault = new HTLBExceptions
 }
 
+/** Class to represented the result of translating an Alaska handle.
+ *
+ * NOTE: This bundle does NOT track any information about which handle
+ * was translated to produce the contained results. */
+final class TranslatedHandle(implicit p: Parameters)
+  extends BoomBundle()(p) {
+  /** The address a handle was translated to. */
+  val addr = UInt(maxSVAddrBits.W)
+}
+
+final object TranslatedHandle {
+  def apply(addr: UInt)(implicit p: Parameters): TranslatedHandle = {
+    val th = Wire(new TranslatedHandle())
+    require(addr.getWidth == th.addr.getWidth,
+      "Provided address must be correct width to be a translated handle")
+    th.addr := addr
+    th
+  }
+}
+
 // Events for PerfCounters in the LSU. Nothing in the HTLB reads these back.
 class HTLBPerfIO extends Bundle {
   val walk_start = Bool()
@@ -403,7 +423,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // ------------------------------------------------------------------------------------------------
 
   for (w <- 0 until memWidth) {
-    val entry_data = cache.io.lookup(w).data
+    val translatedHandle: TranslatedHandle = cache.io.lookup(w).data
 
     io.req(w).ready := true.B
     io.resp(w).miss := htlb_miss(w)
@@ -411,8 +431,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       !hm_enabled(w),
       effectiveAddress(io.req(w).bits.haddr),
       Mux(!io.resp(w).miss,
-        // entry_data.addr + io.req(w).bits.haddr.offset.asUInt,
-        entry_data + io.req(w).bits.haddr.offset.asUInt,
+        translatedHandle.addr + io.req(w).bits.haddr.offset.asUInt,
         0.U
       )
     )

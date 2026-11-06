@@ -105,7 +105,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
    * problematic if the memWidth grows too high because we will end up making
    * a very high-port count memory block! */
   val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(Entry()))
-  val l1_plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
+  val plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
 
   val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)
 
@@ -114,7 +114,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   // Use PLRU to pick way or first invalid
   val candidate_repl_way =
-    (if (cfg.nWays > 1) l1_plru.way(r_idx) else 0.U)
+    (if (cfg.nWays > 1) plru.way(r_idx) else 0.U)
 
   val repl_way =
     if (cfg.nWays > 1) {
@@ -139,7 +139,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   // the next fill in the set does not evict it before the retry. access()
   // applies the updates in order: lane 0, lane 1, ..., then the fill last.
   val plru_hit = widthMap(w => io.lookup(w).access && real_hits(w).asUInt.orR)
-  l1_plru.access(
+  plru.access(
     hid_set :+ r_idx,
     widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
 

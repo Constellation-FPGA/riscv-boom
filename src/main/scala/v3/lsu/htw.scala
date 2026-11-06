@@ -244,12 +244,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
       when (io.req.valid) {
         hid_req := walk_hid
 
-        // if (boomParams.enableStateTracing) {
+        if (boomParams.enableStateTracing) {
           midas.targetutils.SynthesizePrintf(
             printf("HTLB.miss: cycle=%d hid=0x%x htBase=0x%x\n",
               timeline.cycle, walk_hid.id, io.htBase)
           )
-        // }
+        }
 
         if (boomParams.enableTwoStageHTW) {
           val cache = ht_directory_cache.get
@@ -306,12 +306,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
         // Only advance state if the request actually fired
         when(io.mem.req.fire) {
-          // if (boomParams.enableStateTracing) {
+          if (boomParams.enableStateTracing) {
             midas.targetutils.SynthesizePrintf(
               printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
                 timeline.cycle, hid_req.id, walk_addr)
             )
-          // }
+          }
           next_state := HTWState.s_wait_ht_directory
         }
       }

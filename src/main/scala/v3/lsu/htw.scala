@@ -137,10 +137,15 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   private def getTag(hid: HID) = getEntry(hid)._1
   private def getIndex(hid: HID) = getEntry(hid)._2
 
-  /* The translation buffer is the HTW's working space. While the HTW can only
-   * accept one handle to translate at a time, because of latencies when going
-   * to memory, it makes sense for us to have multiple translations in flight at
-   * the same time.
+  /* The HTW's translation buffer serves two purposes:
+   *  1. It is the HTW's working space as it builds up the HID's translation.
+   *  2. Subsequent requests for the same HT0 level can have the HT0->HT1
+   *     mapping cached, helping reduce the number of requests to memory for HT0
+   *     blocks.
+   *
+   * The HTW can only accept one handle to translate at a time. Because of
+   * latencies when going to memory, it makes sense for us to hold onto "hot"
+   * HT0->HT1 translations for some time.
    *
    * The HTW uses this translation buffer to build up a handle's translated
    * address as the HTW walks the structure in-memory. Once a handle is fully
@@ -268,6 +273,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           )
         }
 
+        /* Use the translation buffer as a caching structure for HT0->HT1
+         * mappings. If there is a valid HT0->HT1 mapping, skip the HT0 lookup
+         * and issue the HT1 request directly. */
         val ht0_entry = {
           val ht0_idx = getIndex(walk_hid)
           translation_buffer(ht0_idx)
@@ -291,6 +299,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
             next_state := HTWState.s_request_ht1
           }
         }.otherwise {
+          /* If there is not a valid HT0->HT1 mapping, then do the full HT0
+           * lookup by using the htBase value and indexing into that to get the
+           * HT0 block. */
           walk_addr := io.htBase + hidHT0(walk_hid) * 8.U
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
@@ -338,7 +349,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           )
         }
 
-        // Update HT0 Cache
+        /* Update translation buffer with the information we have gotten from
+         * memory about the translation so far, adding the HT0->HT1 mapping to
+         * the translation buffer for later potential use. */
         val fill_idx = getIndex(hid_req)
         translation_buffer(fill_idx).valid := true.B
         translation_buffer(fill_idx).tag := getTag(hid_req)

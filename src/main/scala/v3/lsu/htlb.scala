@@ -481,15 +481,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     // FIXME: Validate the assumption above is true!
     val hid_req = htw.io.fill.bits.hid
 
-    // val victim_valid = cache.io.victim_valid
-    // val victim_valid = entries(r_idx)(repl_way).valid
-    // val (r_tag, r_idx) = HTLBUtils.hidSplit(htw.io.fill.bits.hid, idxBits)
-    // val victim_used  = cache.io.used(r_idx)(repl_way)
-    // val victim_used  = cache.io.used
-    // midas.targetutils.PerfCounter(fill, "htlb_fill", "htlb_fill")
-    // midas.targetutils.PerfCounter(fill && victim_valid, "htlb_evict_valid", "htlb_evict_valid")
-    // midas.targetutils.PerfCounter(fill && victim_valid && !victim_used, "htlb_evict_unused", "htlb_evict_unused")
-
     // Misses in the cycle a walk starts that did not start it (a lower lane did).
     val miss_walker_taken = widthMap(w => lane_miss(w) && walk_start && walk_lane =/= w.U)
     val miss_busy = widthMap(w => lane_miss(w) && htw.io.events.state =/= HTWState.s_ready)

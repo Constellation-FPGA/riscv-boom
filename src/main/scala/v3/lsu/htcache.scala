@@ -50,7 +50,6 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
   val inval = Input(Valid(new HandleInvalidation()))
   // FIXME: used should be simplified?
   val used = Output(Vec(cfg.nSets, Vec(cfg.nWays, Bool())))
-  val victim_valid = Output(Bool())
 }
 
 /** Handle Table Cache.
@@ -189,7 +188,6 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   }
   when(io.fill.valid) { used(r_idx)(repl_way) := false.B }
 
-  io.victim_valid := entries(r_idx)(repl_way).valid
   midas.targetutils.PerfCounter(io.fill.valid, "htlb_fill", "htlb_fill")
   midas.targetutils.PerfCounter(io.fill.valid && entries(r_idx)(repl_way).valid,
     "htlb_evict_valid", "htlb_evict_valid")

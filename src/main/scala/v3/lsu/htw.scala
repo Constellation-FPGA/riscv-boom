@@ -199,7 +199,8 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   //      Without this register, MIDAS's token model deadlocks at cycle 3.
   //      The 1-cycle delay is acceptable given the multi-cycle cache latency.
   val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
-  val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U)
+  // "Typecast" the UInt(64.W) from the HellaCacheResp to a form we prefer.
+  val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new HTE)
 
   /* The HID that is currently being translated/walked.
    * The register "holds onto" the HID that was requested so that subsequent FSM
@@ -251,14 +252,13 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(state === HTWState.s_wait_ht0 || state === HTWState.s_wait_ht1, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
 
   io.req.ready := state === HTWState.s_ready
-  // The HTFill bundle is the HTW's response. It is only valid when the handle
-  // is done.
+
+  /* The HTFill bundle is the HTW's response. It is only valid when the handle
+   * is done. When the translation is done, the memory response data is the
+   * handle's translated virtual address.*/
   io.fill.valid := translation_done
   io.fill.bits.hid := hid_req
-
-  // NOTE: HTE here is only to "typecast" the UInt(64.W) from the HellaCacheResp
-  // to a form we prefer using.
-  io.fill.bits.xlation.addr := mem_resp_data.asTypeOf(new HTE).addr
+  io.fill.bits.xlation := TranslatedHandle(mem_resp_data.addr)
 
   // io.perf.fill := state === HTWState.s_wait_ht1 && mem_resp_valid
   // perf.fill := state === HTWState.s_wait_ht1 && mem_resp_valid
@@ -359,10 +359,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         val fill_idx = getIndex(hid_req)
         translation_buffer(fill_idx).valid := true.B
         translation_buffer(fill_idx).tag := getTag(hid_req)
-        translation_buffer(fill_idx).data := mem_resp_data
+        translation_buffer(fill_idx).data := mem_resp_data.addr
 
         // Fast Path: Request Second Level immediately
-        walk_addr := mem_resp_data + (hidHT1(hid_req) * 8.U)
+        walk_addr := mem_resp_data.addr + (hidHT1(hid_req) * 8.U)
         io.mem.req.valid := true.B
 
         when (io.mem.req.fire) {

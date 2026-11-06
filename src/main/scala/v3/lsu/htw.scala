@@ -55,26 +55,9 @@ case class HTWConfig(
   pht_enabled: Boolean = true,
 )
 
-/** */
-object HTWState extends ChiselEnum {
-  /** Ready. Waiting for a miss to start the state machine. */
-  val s_ready = Value
-  /** Read cache, or issue a request for the HT directory entry. */
-  val s_request_ht_directory = Value
-  /** Wait for the HT directory entry to return. */
-  val s_wait_ht_directory = Value
-  /** Read cache, or issue a request for the HT entry. */
-  val s_request_ht_entry = Value
-  /** Wait for the HT entry to return. Refill when done. */
-  val s_wait_ht_entry = Value
-
-  def waiting(state: HTWState.Type): Bool = state =/= s_ready
-}
-
 // TODO: Rename this to HTWPerf!
 // final class HTWPerf extends Bundle {
 final class HTWEvents extends Bundle {
-  val state = Output(HTWState())
   val l0_hit_in_s_ready = Output(Bool())
 }
 
@@ -110,6 +93,22 @@ final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
   */
 final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
+
+  /** States for the FSM in the HTW. */
+  private object HTWState extends ChiselEnum {
+    /** Ready. Waiting for a miss to start the state machine. */
+    val s_ready = Value
+    /** Read cache, or issue a request for the HT directory entry. */
+    val s_request_ht_directory = Value
+    /** Wait for the HT directory entry to return. */
+    val s_wait_ht_directory = Value
+    /** Read cache, or issue a request for the HT entry. */
+    val s_request_ht_entry = Value
+    /** Wait for the HT entry to return. Refill when done. */
+    val s_wait_ht_entry = Value
+
+    def waiting(state: HTWState.Type): Bool = state =/= s_ready
+  }
 
   val io = IO(new HTWIO(cfg))
   io.events.l0_hit_in_s_ready := false.B
@@ -190,10 +189,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * Because the HTLB can be enabled and disabled at runtime, we only let the
    * FSM run when the user has started the HTLB, and therefore the HTW. If the
    * user turns the HTLB off, reset the HTW's FSM to the ready/start state. */
-  val state = RegInit(HTWState.s_ready)
-  val next_state = WireDefault(state)
+  private val state = RegInit(HTWState.s_ready)
+  private val next_state = WireDefault(state)
+
   state := Mux(io.htw_enabled, next_state, HTWState.s_ready)
-  io.events.state := state
 
   timeline.trackState("htlb.state", "mem_req", io.mem.req.valid)
   timeline.trackState("htlb.state", "mem_resp", io.mem.resp.valid)

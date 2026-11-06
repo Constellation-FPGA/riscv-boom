@@ -10,16 +10,6 @@ import freechips.rocketchip.util.Split
 
 import boom.v3.common._
 
-/** A Handle Table Entry
- *
- * TODO: What is this for? It is only used to convert a mem_resp_data to
- * something else in the s_wait_ht_entry state.
- */
-final class HTE(implicit p: Parameters) extends BoomBundle()(p) {
-  val reserved = UInt((64 - maxSVAddrBits).W)
-  val addr = UInt(maxSVAddrBits.W) // Virtual object base; upper bits are ignored.
-}
-
 /** TODO: Document this.
  * ???
  */
@@ -117,6 +107,16 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     val s_wait_ht1 = Value
 
     def waiting(state: HTWState.Type): Bool = state =/= s_ready
+  }
+
+  /** An internal class used to cast the 8-byte 64-bit result from memory into
+   * an object with named fields that are easier for us to reason about and work
+   * work.
+   */
+  // Make this private in the future?
+  final class HTE(implicit p: Parameters) extends BoomBundle()(p) {
+    val reserved = UInt((64 - maxSVAddrBits).W)
+    val addr = UInt(maxSVAddrBits.W) // Virtual object base; upper bits are ignored.
   }
 
   val io = IO(new HTWIO(cfg))

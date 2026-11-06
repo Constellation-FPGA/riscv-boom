@@ -138,9 +138,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     if (boomParams.enableTwoStageHTW)
       Some(
         RegInit(
-          VecInit(
-            Seq.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry(htwL1Bits)))
-          )
+          VecInit.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry(htwL1Bits)))
         )
       )
     else None

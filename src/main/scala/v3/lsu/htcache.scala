@@ -114,19 +114,19 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   val lookup_hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._2)
 
   // Use PLRU to pick way or first invalid
-  val candidate_repl_way =
-    (if (cfg.nWays > 1) plru.way(r_idx) else 0.U)
-
-  val repl_way =
+  val repl_way = {
+    /* NOTE: The SetAssocLRU does not handle conditions where nWays <= 1. So
+     * we must handle it ourselves. */
     if (cfg.nWays > 1) {
       val valid_entries = VecInit(entries(r_idx).map(_.valid))
       Mux(
         valid_entries.asUInt.andR,
-        candidate_repl_way,
+        plru.way(r_idx),
         OHToUInt(PriorityEncoderOH(~valid_entries.asUInt))
       )
     }
     else 0.U
+  }
 
   /* Hit Logic (per lane)
    * Hits per lane (memWidth), per set, and per way. Produces a true.B when the

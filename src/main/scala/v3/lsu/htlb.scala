@@ -93,14 +93,10 @@ final object TranslatedHandle {
 final class HTLBPerfIO()(implicit p: Parameters) extends BoomBundle()(p) {
   /** Did the incoming HTLB request trigger/start a handle table walk? */
   val walk_start = Bool()
-  /** The LSU lane whose miss started the walk.
-   *
-   * XXX: memWidth <= 2 */
-  val walk_lane  = UInt(2.W)
+  /** The LSU lane whose miss started the walk. */
+  val walk_lane  = UInt(log2Ceil(memWidth+1).W) // +1 to prevent 0-width wires
   /** Was a handle translation sent to the [[HTCache]] to fill a cache slot? */
   val fill       = Bool()
-  require(memWidth <= 2,
-    s"HTLBPerfIO does not support memWidth > 2, memWidth is $memWdith")
 }
 
 /** Describes the configuration of an [[HTLB]]'s and its internal components.

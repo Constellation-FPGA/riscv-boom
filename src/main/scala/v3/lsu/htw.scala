@@ -263,9 +263,8 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         }
 
         val ht0_entry = {
-          val cache = translation_buffer
           val ht0_idx = getIndex(walk_hid)
-          cache(ht0_idx)
+          translation_buffer(ht0_idx)
         }
         val ht0_tag = getTag(walk_hid)
         val ht0_hit = ht0_entry.valid && ht0_entry.tag === ht0_tag
@@ -335,11 +334,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         }
 
         // Update HT0 Cache
-        val cache = translation_buffer
         val fill_idx = getIndex(hid_req)
-        cache(fill_idx).valid := true.B
-        cache(fill_idx).tag := getTag(hid_req)
-        cache(fill_idx).data := mem_resp_data
+        translation_buffer(fill_idx).valid := true.B
+        translation_buffer(fill_idx).tag := getTag(hid_req)
+        translation_buffer(fill_idx).data := mem_resp_data
 
         inner_walk_base := mem_resp_data
 

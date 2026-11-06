@@ -243,6 +243,8 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(HTWState.waiting(state), "htlb_waiting", "htlb_waiting")
   midas.targetutils.PerfCounter(state === HTWState.s_request_ht0 || state === HTWState.s_request_ht1, "htlb_mem_stall_cycles", "htlb_mem_stall_cycles")
   midas.targetutils.PerfCounter(state === HTWState.s_wait_ht0 || state === HTWState.s_wait_ht1, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
+  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht0 && mem_resp_valid && io.mem.req.fire,
+    "htlb_fast_path_fired", "htlb_fast_path_fired")
 
   io.req.ready := state === HTWState.s_ready
 
@@ -395,7 +397,4 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
       }
     }
   }
-
-  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht0 && mem_resp_valid && io.mem.req.fire,
-    "htlb_fast_path_fired", "htlb_fast_path_fired")
 }

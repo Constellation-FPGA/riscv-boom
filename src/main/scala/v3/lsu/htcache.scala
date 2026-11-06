@@ -44,7 +44,9 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
 
   /** The handle cache lookup that should be performed. */
   val lookup = Vec(memWidth, new HTCacheLookup(cfg))
+  /** A handle to be inserted into (fill) the [[HTCache]]. */
   val fill = Input(Valid(new HTFill()))
+  /** A handle to be removed from (invalidated from) the [[HTCache]]. */
   val inval = Input(Valid(new HandleInvalidation()))
 }
 

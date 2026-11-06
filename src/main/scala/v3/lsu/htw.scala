@@ -31,12 +31,6 @@ final class HTFill(implicit p: Parameters) extends BoomBundle()(p) {
   val xlation = new TranslatedHandle()
 }
 
-/** IO class meant for tracking performance events from the [[HTCache]]. */
-final class HTWPerf extends Bundle {
-  /** Raised to true.B when a fill goes out. */
-  val fill = Output(Bool())
-}
-
 /** Describes the configuration of an [[HTW]].
  *
  * @param pht_enabled True if the address in the htBase CSR is physical.
@@ -77,7 +71,6 @@ final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
    * to have PerfCounters in the upper-level [[YukonHTLB]]. */
 // TODO: Rename this to perf!
   val events = Output(new HTWEvents())
-  val perf = Output(new HTWPerf())
   /** Connection to memory to translate from the handle table in-memory. */
   val mem = new HellaCacheIO
 }
@@ -259,11 +252,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.fill.valid := translation_done
   io.fill.bits.hid := hid_req
   io.fill.bits.xlation := TranslatedHandle(mem_resp_data.addr)
-
-  // io.perf.fill := state === HTWState.s_wait_ht1 && mem_resp_valid
-  // perf.fill := state === HTWState.s_wait_ht1 && mem_resp_valid
-  io.perf.fill := translation_done
-  perf.fill := translation_done
 
   switch(state) {
     is(HTWState.s_ready) {

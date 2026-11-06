@@ -363,7 +363,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   io.miss_rdy := htw.io.req.ready
   cache.io.fill := htw.io.fill
 
-  io.perf.fill := htw.io.perf.fill
+  io.perf.fill := htw.io.fill.valid
 
   for (w <- 0 until memWidth) {
     io.resp(w).handle_fault.ld := false.B

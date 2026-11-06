@@ -233,13 +233,13 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   // io.perf.walk_start := walk_start
   // io.perf.walk_lane := walk_lane
 
-  val walk_hid = io.req.bits
   // Memory Request Construction
   val inner_walk_base = RegInit(0.U(xLen.W))
 
   switch(state) {
     is(HTWState.s_ready) {
       when (io.req.valid) {
+        val walk_hid = io.req.bits
         hid_req := walk_hid
 
         if (boomParams.enableStateTracing) {
@@ -250,10 +250,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         }
 
         if (boomParams.enableTwoStageHTW) {
-          val cache = ht_directory_cache.get
-          val l0_idx = getIndex(walk_hid)
+          val l0_entry = {
+            val cache = ht_directory_cache.get
+            val l0_idx = getIndex(walk_hid)
+            cache(l0_idx)
+          }
           val l0_tag = getTag(walk_hid)
-          val l0_entry = cache(l0_idx)
           val l0_hit = l0_entry.valid && l0_entry.tag === l0_tag
 
           when(l0_hit) {

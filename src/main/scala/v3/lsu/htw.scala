@@ -45,10 +45,6 @@ final class HTFill(implicit p: Parameters) extends BoomBundle()(p) {
 final class HTWPerf extends Bundle {
   /** Raised to true.B when a fill goes out. */
   val fill = Output(Bool())
-  // /** Raised to true.B when the walk starts. */
-  // val walk_start = Output(Bool())
-  // /** Raised to true.B when there is a walk lane. */
-  // val walk_lane = Output(Bool())
 }
 
 /** Describes the configuration of an [[HTW]].
@@ -228,8 +224,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.fill.bits.xlation.addr := mem_resp_data.asTypeOf(new HTE).addr
 
   io.perf.fill := state === HTWState.s_wait_ht_entry && mem_resp_valid
-  // io.perf.walk_start := walk_start
-  // io.perf.walk_lane := walk_lane
 
   // Memory Request Construction
   val inner_walk_base = RegInit(0.U(xLen.W))

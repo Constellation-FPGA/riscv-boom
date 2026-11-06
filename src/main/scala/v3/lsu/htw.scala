@@ -192,8 +192,19 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
   val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U)
 
-  // The requested HID
+  /* The HID that is currently being translated/walked.
+   * The register "holds onto" the HID that was requested so that subsequent FSM
+   * stages can answer "this is the HID I am currently translating". It is used
+   * by the state machine below to pass HID information between translation
+   * states/stages.
+   *
+   * XXX: There is only ever ONE handle being translated by the HTW at a time! */
   val hid_req = Reg(new HID())
+
+  // NOTE: Using .fire is required because that does req.ready && req.valid!
+  when (io.req.fire) {
+    hid_req := io.req.bits
+  }
 
   /* State Machine
    * Because the HTLB can be enabled and disabled at runtime, we only let the
@@ -253,7 +264,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     is(HTWState.s_ready) {
       when (io.req.valid) {
         val walk_hid = io.req.bits
-        hid_req := walk_hid
 
         if (boomParams.enableStateTracing) {
           midas.targetutils.SynthesizePrintf(

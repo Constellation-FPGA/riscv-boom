@@ -107,6 +107,10 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(Entry()))
   val plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
 
+  /* "used" is set on a hit and cleared on a fill. */
+  val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
+  io.used := used
+
   val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)
 
   val lookup_hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._1)
@@ -143,16 +147,27 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     lookup_hid_set :+ r_idx,
     widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
 
-  // No victim handling needed for simplification, just overwrite
-  when(io.fill.valid) {
-    val translation = io.fill.bits.xlation
-    entries(r_idx)(repl_way).insert(r_tag, translation)
-  }
-
   for (w <- 0 until memWidth) {
     io.lookup(w).hit  := real_hits(w).asUInt.orR
     io.lookup(w).way  := hit_way(w)
-    io.lookup(w).data := entries(hid_set(w))(hit_way(w)).data
+    io.lookup(w).data := entries(lookup_hid_set(w))(hit_way(w)).data
+
+    /* Mark an entry in the handle cached as "used" when there was a request
+     * has a hit.
+     *
+     * The fill write is last in the source file, so fills win. */
+    when(io.lookup(w).en && io.lookup(w).hit) {
+      used(lookup_hid_set(w))(OHToUInt(real_hits(w))) := true.B
+    }
+  }
+
+  when(io.fill.valid) {
+    val translation = io.fill.bits.xlation
+    // No victim handling needed, just overwrite
+    entries(r_idx)(repl_way).insert(r_tag, translation)
+
+    // A newly inserted cache entry has not been "used" yet.
+    used(r_idx)(repl_way) := false.B
   }
 
   /* Invalidation */
@@ -166,16 +181,6 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   when(reset.asBool || (io.inval.valid && io.inval.bits.all)) {
     entries.foreach(set => set.foreach(way => way.invalidate()))
   }
-
-  // Lost entries. "used" is set on a hit and cleared on a fill. The fill write is last, so a fill wins.
-  val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
-  io.used := used
-  for (w <- 0 until memWidth) {
-    when(io.lookup(w).en && io.lookup(w).hit) {
-      used(lookup_hid_set(w))(OHToUInt(real_hits(w))) := true.B
-    }
-  }
-  when(io.fill.valid) { used(r_idx)(repl_way) := false.B }
 
   midas.targetutils.PerfCounter(io.fill.valid, "htlb_fill", "htlb_fill")
   midas.targetutils.PerfCounter(io.fill.valid && entries(r_idx)(repl_way).valid,

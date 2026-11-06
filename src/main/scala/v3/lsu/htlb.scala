@@ -66,7 +66,11 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
    * This may be a virtual address or a physical address, depending on the
    * value of [[HTLBResp.phys]].
    * If it is a virtual address, then it must go through page translation before
-   * the actual-requested memory operation happens. */
+   * the actual-requested memory operation happens.
+   *
+   * NOTE: This field is xLen wide despite returning a virtual address when
+   * translating a handle, because this is also how a handle fault returns
+   * the encoded handle that faulted. */
   val addr = UInt(xLen.W)
   val miss = Bool()
   /** If the handle is not present or an load/store was attempted with the wrong

@@ -27,10 +27,8 @@ final class TopLevelCacheEntry(htwL1Bits: Int)(implicit p: Parameters)
 final class HTFill(implicit p: Parameters) extends BoomBundle()(p) {
   /** The HID that should fill (be inserted into) the handle cache. */
   val hid = new HID()
-  // val data = new HTLBEntryData()
   /** The address this translated handle maps to. */
-  // FIXME: Should this be factored out to a named class?
-  val addr = UInt(maxSVAddrBits.W)
+  val xlation = new TranslatedHandle()
 }
 
 /** IO class meant for tracking performance events from the [[HTCache]]. */
@@ -217,8 +215,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.req.ready := state === HTWState.s_ready
   io.fill.valid := state === HTWState.s_wait_ht_entry && mem_resp_valid
   io.fill.bits.hid := hid_req
-  // io.fill.bits.data.addr := mem_resp_data.asTypeOf(new HTE).addr
-  io.fill.bits.addr := mem_resp_data.asTypeOf(new HTE).addr
+  io.fill.bits.xlation.addr := mem_resp_data.asTypeOf(new HTE).addr
 
   io.perf.fill := state === HTWState.s_wait_ht_entry && mem_resp_valid
   // io.perf.walk_start := walk_start

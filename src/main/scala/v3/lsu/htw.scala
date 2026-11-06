@@ -256,10 +256,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.perf.fill := translation_done
   perf.fill := translation_done
 
-  // Memory Request Construction
-  // TODO: What is this register for? We have the translation buffer for this?
-  val inner_walk_base = RegInit(0.U(xLen.W))
-
   switch(state) {
     is(HTWState.s_ready) {
       when (io.req.valid) {
@@ -281,7 +277,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
         when(ht0_hit) {
           io.events.ht0_hit_in_s_ready := true.B
-          inner_walk_base := ht0_entry.data
           walk_addr := ht0_entry.data + (hidHT1(walk_hid) * 8.U)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
@@ -349,8 +344,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         translation_buffer(fill_idx).tag := getTag(hid_req)
         translation_buffer(fill_idx).data := mem_resp_data
 
-        inner_walk_base := mem_resp_data
-
         // Fast Path: Request Second Level immediately
         walk_addr := mem_resp_data + (hidHT1(hid_req) * 8.U)
         io.mem.req.valid := true.B
@@ -369,7 +362,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
     is(HTWState.s_request_ht1) {
       // Request Inner Entry (HTE)
-      walk_addr := inner_walk_base + (hidHT1(hid_req) * 8.U)
+      assert(translation_buffer(getIndex(hid_req)).valid,
+        cf"Translation buffer has invalid HT1 data for HID $hid_req at index ${getIndex(hid_req)}")
+      walk_addr := translation_buffer(getIndex(hid_req)).data + (hidHT1(hid_req) * 8.U)
 
       io.mem.req.valid := true.B
       when(io.mem.req.fire) {

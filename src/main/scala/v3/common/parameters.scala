@@ -110,8 +110,6 @@ case class BoomCoreParams(
   nHTLBWays: Int = 4,
   enableHTLBSetCounters: Boolean = false, // one PerfCounter per HTLB set (walks per set)
   enablePHTSupport: Boolean = false,
-  /** Make the Handle Table Walker use a 2-layer/-stage implementation. */
-  enableTwoStageHTW: Boolean = false,
   HTWCacheSize: Int = 4,
   /** Trace state changes to handles on a per-handle basis. */
   enableHandleTracing: Boolean = false,
@@ -354,8 +352,4 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
     "Enabling handle tracing requires that handles are enabled")
   require(implies(boomParams.enableStateTracing, boomParams.usingHandles),
     "Enabling handle STATE tracing requires that handles are enabled")
-
-  /* The Handle Table Walker (HTW) currently is REQUIRED to be a 2-level lookup
-   * table. */
-  require(boomParams.enableTwoStageHTW, "The HTLB's HTW does not currently support single-level HTWs!")
 }

@@ -143,15 +143,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * The HTW uses this translation buffer to build up a handle's translated
    * address as the HTW walks the structure in-memory. Once a handle is fully
    * translated, the translation exits the buffer and is sent elsewhere. */
-  private val translation_buffer = {
-    if (boomParams.enableTwoStageHTW)
-      Some(
-        RegInit(
-          VecInit.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry(htwL1Bits)))
-        )
-      )
-    else None
-  }
+  private val translation_buffer = RegInit(
+    VecInit.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry(htwL1Bits)))
+  )
 
   val timeline = new TimelineTracker()
 
@@ -259,119 +253,100 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           )
         }
 
-        if (boomParams.enableTwoStageHTW) {
-          val l0_entry = {
-            val cache = translation_buffer.get
-            val l0_idx = getIndex(walk_hid)
-            cache(l0_idx)
-          }
-          val l0_tag = getTag(walk_hid)
-          val l0_hit = l0_entry.valid && l0_entry.tag === l0_tag
+        val l0_entry = {
+          val cache = translation_buffer
+          val l0_idx = getIndex(walk_hid)
+          cache(l0_idx)
+        }
+        val l0_tag = getTag(walk_hid)
+        val l0_hit = l0_entry.valid && l0_entry.tag === l0_tag
 
-          when(l0_hit) {
-            io.events.l0_hit_in_s_ready := true.B
-            inner_walk_base := l0_entry.data
-            walk_addr := l0_entry.data + (hidL1(walk_hid) * 8.U)
-            io.mem.req.valid := true.B
-            when(io.mem.req.fire) {
-              midas.targetutils.SynthesizePrintf(
-                printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x (L0 hit)\n",
-                  timeline.cycle, walk_hid.id, walk_addr)
-              )
-              next_state := HTWState.s_wait_ht_entry
-            }.otherwise {
-              next_state := HTWState.s_request_ht_entry
-            }
-          }.otherwise {
-            walk_addr := io.htBase + hidL0(walk_hid) * 8.U
-            io.mem.req.valid := true.B
-            when(io.mem.req.fire) {
-              midas.targetutils.SynthesizePrintf(
-                printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
-                  timeline.cycle, walk_hid.id, walk_addr)
-              )
-              next_state := HTWState.s_wait_ht_directory
-            }.otherwise {
-              next_state := HTWState.s_request_ht_directory
-            }
-          }
-        } else {
-          walk_addr := Handle.toAddr(walk_hid, io.htBase)
+        when(l0_hit) {
+          io.events.l0_hit_in_s_ready := true.B
+          inner_walk_base := l0_entry.data
+          walk_addr := l0_entry.data + (hidL1(walk_hid) * 8.U)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
+            midas.targetutils.SynthesizePrintf(
+              printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x (L0 hit)\n",
+                timeline.cycle, walk_hid.id, walk_addr)
+            )
             next_state := HTWState.s_wait_ht_entry
           }.otherwise {
             next_state := HTWState.s_request_ht_entry
+          }
+        }.otherwise {
+          walk_addr := io.htBase + hidL0(walk_hid) * 8.U
+          io.mem.req.valid := true.B
+          when(io.mem.req.fire) {
+            midas.targetutils.SynthesizePrintf(
+              printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
+                timeline.cycle, walk_hid.id, walk_addr)
+            )
+            next_state := HTWState.s_wait_ht_directory
+          }.otherwise {
+            next_state := HTWState.s_request_ht_directory
           }
         }
       }
     }
 
     is(HTWState.s_request_ht_directory) {
-      if (boomParams.enableTwoStageHTW) {
-        // Request L0 entry from memory
-        // Addr = htBase + (hidL0 * 8)
-        walk_addr := io.htBase + hidL0(hid_req) * 8.U
-        io.mem.req.valid := true.B
+      // Request L0 entry from memory
+      walk_addr := io.htBase + hidL0(hid_req) * 8.U
+      io.mem.req.valid := true.B
 
-        // Only advance state if the request actually fired
-        when(io.mem.req.fire) {
-          if (boomParams.enableStateTracing) {
-            midas.targetutils.SynthesizePrintf(
-              printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
-                timeline.cycle, hid_req.id, walk_addr)
-            )
-          }
-          next_state := HTWState.s_wait_ht_directory
+      // Only advance state if the request actually fired
+      when(io.mem.req.fire) {
+        /* TODO: Make this whole if & printf a method inside the HTWState
+         * object? The method takes in the NEXT state to go to and modifies
+         * the printf appropriately? */
+        if (boomParams.enableStateTracing) {
+          midas.targetutils.SynthesizePrintf(
+            printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
+              timeline.cycle, hid_req.id, walk_addr)
+          )
         }
+        next_state := HTWState.s_wait_ht_directory
       }
     }
 
     is(HTWState.s_wait_ht_directory) {
-      if (boomParams.enableTwoStageHTW) {
-        // Wait for outer walk response
-        when(mem_resp_valid) {
-          midas.targetutils.SynthesizePrintf(
-            printf("HTLB.dir_resp: cycle=%d hid=0x%x base=0x%x\n",
-              timeline.cycle, hid_req.id, mem_resp_data)
-          )
+      // Wait for outer walk response
+      when(mem_resp_valid) {
+        midas.targetutils.SynthesizePrintf(
+          printf("HTLB.dir_resp: cycle=%d hid=0x%x base=0x%x\n",
+            timeline.cycle, hid_req.id, mem_resp_data)
+        )
 
-          // Update L0 Cache
-          val cache = translation_buffer.get
-          val fill_idx = getIndex(hid_req)
-          cache(fill_idx).valid := true.B
-          cache(fill_idx).tag := getTag(hid_req)
-          cache(fill_idx).data := mem_resp_data
+        // Update L0 Cache
+        val cache = translation_buffer
+        val fill_idx = getIndex(hid_req)
+        cache(fill_idx).valid := true.B
+        cache(fill_idx).tag := getTag(hid_req)
+        cache(fill_idx).data := mem_resp_data
 
-          inner_walk_base := mem_resp_data
+        inner_walk_base := mem_resp_data
 
-          // Fast Path: Request Second Level immediately
-          // Addr = mem_resp_data + (hid_req & mask) * 8
-          walk_addr := mem_resp_data + (hidL1(hid_req) * 8.U)
-          io.mem.req.valid := true.B
+        // Fast Path: Request Second Level immediately
+        walk_addr := mem_resp_data + (hidL1(hid_req) * 8.U)
+        io.mem.req.valid := true.B
 
-          when (io.mem.req.fire) {
-            next_state := HTWState.s_wait_ht_entry
-          } .otherwise {
-            next_state := HTWState.s_request_ht_entry
-          }
-        }.elsewhen(io.mem.s2_nack) {
-          next_state := HTWState.s_request_ht_directory
-        }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
-          next_state := HTWState.s_request_ht_directory
+        when (io.mem.req.fire) {
+          next_state := HTWState.s_wait_ht_entry
+        } .otherwise {
+          next_state := HTWState.s_request_ht_entry
         }
+      }.elsewhen(io.mem.s2_nack) {
+        next_state := HTWState.s_request_ht_directory
+      }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
+        next_state := HTWState.s_request_ht_directory
       }
     }
 
     is(HTWState.s_request_ht_entry) {
       // Request Inner Entry (HTE)
-      // Addr = inner_walk_base + (hid & mask) * 8
-      // mask for 18 bits = (1 << 18) - 1
-      if (boomParams.enableTwoStageHTW) {
-        walk_addr := inner_walk_base + (hidL1(hid_req) * 8.U)
-      } else {
-        walk_addr := Handle.toAddr(hid_req, io.htBase)
-      }
+      walk_addr := inner_walk_base + (hidL1(hid_req) * 8.U)
 
       io.mem.req.valid := true.B
       when(io.mem.req.fire) {
@@ -396,8 +371,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     }
   }
 
-    if (boomParams.enableTwoStageHTW) {
-      midas.targetutils.PerfCounter(state === HTWState.s_wait_ht_directory && mem_resp_valid && io.mem.req.fire,
-        "htlb_fast_path_fired", "htlb_fast_path_fired")
-    }
+  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht_directory && mem_resp_valid && io.mem.req.fire,
+    "htlb_fast_path_fired", "htlb_fast_path_fired")
 }

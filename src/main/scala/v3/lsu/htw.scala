@@ -56,8 +56,15 @@ case class HTWConfig(
 )
 
 // TODO: Rename this to HTWPerf!
+/** Side-band information about the state of the HTW and major events within it.
+ *
+ * This is primarily used with performance counters and analyses. No IO
+ * critical for the HTW to function should be placed in this bundle.
+ */
 // final class HTWPerf extends Bundle {
 final class HTWEvents extends Bundle {
+  /** Outputs true.B if an incoming handle translation request matches an
+   * already in-flight and not yet completed handle translation request. */
   val l0_hit_in_s_ready = Output(Bool())
 }
 

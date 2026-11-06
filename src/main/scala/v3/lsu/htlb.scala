@@ -398,6 +398,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // the walker is busy does.
   val lane_miss = widthMap(w => io.req(w).fire && htlb_miss(w))
   val any_miss  = lane_miss.asUInt.orR
+  // Which lane number will be walked? Lower lanes are prioritized higher.
   val walk_lane = if (memWidth == 1) 0.U else PriorityEncoder(lane_miss.asUInt)
   val walk_hid  = hids(walk_lane)
 

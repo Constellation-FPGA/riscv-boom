@@ -10,16 +10,6 @@ import freechips.rocketchip.util.Split
 
 import boom.v3.common._
 
-/** A Handle Table Entry
- *
- * TODO: What is this for? It is only used to convert a mem_resp_data to
- * something else in the s_wait_ht_entry state.
- */
-final class HTE(implicit p: Parameters) extends BoomBundle()(p) {
-  val reserved = UInt((64 - maxSVAddrBits).W)
-  val addr = UInt(maxSVAddrBits.W) // Virtual object base; upper bits are ignored.
-}
-
 /** A request made to an HTLB.
  *
  * Requires the "handle address" to operate on and the command (CMD) that will

@@ -464,7 +464,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(io.clear_htlb, "htlb_clear", "htlb_clear")
   midas.targetutils.PerfCounter(do_htInval && !inval_all, "htlb_inval_one", "htlb_inval_one")
   midas.targetutils.PerfCounter(do_htInval && inval_all, "htlb_inval_all", "htlb_inval_all")
-  midas.targetutils.PerfCounter(!io.htInval.hidZero() && HTWState.waiting(htw.io.events.state),
+  midas.targetutils.PerfCounter(!io.htInval.hidZero() && !htw.io.req.ready,
     "htlb_inval_wait", "htlb_inval_wait")
 
   // ------------------------------------------------------------------------------------------------
@@ -474,7 +474,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------
 
-  val walk_start = htw.io.events.state === HTWState.s_ready && io.htlb_enabled && !do_htInval && any_miss
+  val walk_start = htw.io.req.ready && io.htlb_enabled && !do_htInval && any_miss
 
   io.perf.walk_start := walk_start
   io.perf.walk_lane  := walk_lane
@@ -492,7 +492,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
     // Misses in the cycle a walk starts that did not start it (a lower lane did).
     val miss_walker_taken = widthMap(w => lane_miss(w) && walk_start && walk_lane =/= w.U)
-    val miss_busy = widthMap(w => lane_miss(w) && htw.io.events.state =/= HTWState.s_ready)
+    val miss_busy = widthMap(w => lane_miss(w) && !htw.io.req.ready)
     midas.targetutils.PerfCounter(PopCount(widthMap(w => miss_busy(w) && hids(w) === hid_req)), "htlb_miss_busy_same", "htlb_miss_busy_same")
     midas.targetutils.PerfCounter(PopCount(widthMap(w => miss_busy(w) && hids(w) =/= hid_req)), "htlb_miss_busy_other", "htlb_miss_busy_other")
     midas.targetutils.PerfCounter(PopCount(miss_walker_taken), "htlb_miss_walker_taken", "htlb_miss_walker_taken")
@@ -502,7 +502,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val walk_max    = RegInit(0.U(16.W))
     when(walk_start) {
       walk_cycles := 1.U
-    }.elsewhen(HTWState.waiting(htw.io.events.state) && walk_cycles =/= ~0.U(16.W)) {
+    }.elsewhen(!htw.io.req.ready && walk_cycles =/= ~0.U(16.W)) {
       walk_cycles := walk_cycles + 1.U
     }
     when(fill && walk_cycles > walk_max) { walk_max := walk_cycles }

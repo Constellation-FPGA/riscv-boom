@@ -46,8 +46,6 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
   val lookup = Vec(memWidth, new HTCacheLookup(cfg))
   val fill = Input(Valid(new HTFill()))
   val inval = Input(Valid(new HandleInvalidation()))
-  // FIXME: used should be simplified?
-  val used = Output(Vec(cfg.nSets, Vec(cfg.nWays, Bool())))
 }
 
 /** Handle Table Cache.
@@ -109,7 +107,6 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   /* "used" is set on a hit and cleared on a fill. */
   val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
-  io.used := used
 
   val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)
 

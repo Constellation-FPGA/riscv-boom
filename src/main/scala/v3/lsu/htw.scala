@@ -106,6 +106,12 @@ final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
   val mem = new HellaCacheIO
 }
 
+/** The HTW takes in a single handle per clock cycle and attempts to translate
+  * it to a [[TranslatedHandle]] and outputs it as an [[HTFill]] response.
+  *
+  * NOTE: This module does NOT depend on memWidth, so there is a SINGLE HTW
+  * shared by all memory lanes.
+  */
 final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
 

@@ -10,18 +10,6 @@ import freechips.rocketchip.util.Split
 
 import boom.v3.common._
 
-/** TODO: Document this.
- * ???
- */
-// TODO: RENAME THIS
-final class TopLevelCacheEntry(htwHT1Bits: Int)(implicit p: Parameters)
-  extends BoomBundle()(p) {
-// final class HTWEntry(implicit p: Parameters) extends BoomBundle()(p) {
-  val valid = Bool()
-  val tag = UInt(htwHT1Bits.W) // TODO: Restore this field
-  val data = UInt(maxSVAddrBits.W)     // Store the base address for inner walks
-}
-
 /** The result from a walk through the handle table in memory. */
 // FIXME: Should this go in htcache.scala instead?
 final class HTFill(implicit p: Parameters) extends BoomBundle()(p) {
@@ -109,6 +97,16 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
      * This can be an HT0 address from an HT0 lookup, an HT1 address from an HT1
      * lookup, or a handle's final translation. */
     val addr = UInt(maxSVAddrBits.W)
+  }
+
+  /** TODO: Document this.
+   * ???
+   */
+  final class TopLevelCacheEntry(htwHT1Bits: Int)(implicit p: Parameters)
+    extends BoomBundle()(p) {
+    val valid = Bool()
+    val tag = UInt(htwHT1Bits.W) // TODO: Restore this field
+    val data = UInt(maxSVAddrBits.W)     // Store the base address for inner walks
   }
 
   val io = IO(new HTWIO(cfg))

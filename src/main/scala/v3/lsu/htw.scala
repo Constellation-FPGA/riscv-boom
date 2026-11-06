@@ -24,11 +24,11 @@ final class HTE(implicit p: Parameters) extends BoomBundle()(p) {
  * ???
  */
 // TODO: RENAME THIS
-final class TopLevelCacheEntry(htwL1Bits: Int)(implicit p: Parameters)
+final class TopLevelCacheEntry(htwHT1Bits: Int)(implicit p: Parameters)
   extends BoomBundle()(p) {
 // final class HTWEntry(implicit p: Parameters) extends BoomBundle()(p) {
   val valid = Bool()
-  val tag = UInt(htwL1Bits.W) // TODO: Restore this field
+  val tag = UInt(htwHT1Bits.W) // TODO: Restore this field
   val data = UInt(maxSVAddrBits.W)     // Store the base address for inner walks
 }
 
@@ -65,7 +65,7 @@ case class HTWConfig(
 final class HTWEvents extends Bundle {
   /** Outputs true.B if an incoming handle translation request matches an
    * already in-flight and not yet completed handle translation request. */
-  val l0_hit_in_s_ready = Output(Bool())
+  val ht0_hit_in_s_ready = Output(Bool())
 }
 
 final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
@@ -105,33 +105,35 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   private object HTWState extends ChiselEnum {
     /** Ready. Waiting for a miss to start the state machine. */
     val s_ready = Value
-    /** Read cache, or issue a request for the HT directory entry. */
-    val s_request_ht_directory = Value
-    /** Wait for the HT directory entry to return. */
-    val s_wait_ht_directory = Value
-    /** Read cache, or issue a request for the HT entry. */
-    val s_request_ht_entry = Value
-    /** Wait for the HT entry to return. Refill when done. */
-    val s_wait_ht_entry = Value
+    /** Read cache, or issue a request for the entry inside the HT0 level of the
+     * handle table in-memory. */
+    val s_request_ht0 = Value
+    /** Wait for the HT0 entry to return. */
+    val s_wait_ht0 = Value
+    /** Read cache, or issue a request for the handle's translated address from
+     * the HT1 level of the handle table in-memory. */
+    val s_request_ht1 = Value
+    /** Wait for the HT1 entry to return. Refill when done. */
+    val s_wait_ht1 = Value
 
     def waiting(state: HTWState.Type): Bool = state =/= s_ready
   }
 
   val io = IO(new HTWIO(cfg))
-  io.events.l0_hit_in_s_ready := false.B
+  io.events.ht0_hit_in_s_ready := false.B
 
   /* The zeroth level is indexed by the top 12 bits of a handle ID and the
    * first level is indexed by the remaining bits (18 bits in this case). */
   /* FIXME: Should these be parameters to the HTW class? */
-  private val htwL0Bits = 12
-  private val htwL1Bits = Handle.HANDLE_ID_BITS - htwL0Bits
+  private val htwHT0Bits = 12
+  private val htwHT1Bits = Handle.HANDLE_ID_BITS - htwHT0Bits
 
   // Adapted from HTW.scala
   // We assume twoStageHTW is true for this simplified version with 2-stage
-  // TODO: hidL0 & hidL1 should instances of custom types.
-  private def hidL0(hid: HID) = hid.id.head(htwL0Bits)
-  private def hidL1(hid: HID) = hid.id(htwL1Bits-1, 0)
-  private def getEntry(hid: HID) = Split(hidL0(hid), log2Ceil(boomParams.HTWCacheSize))
+  // TODO: hidHT0 & hidHT1 should instances of custom types.
+  private def hidHT0(hid: HID) = hid.id.head(htwHT0Bits)
+  private def hidHT1(hid: HID) = hid.id(htwHT1Bits-1, 0)
+  private def getEntry(hid: HID) = Split(hidHT0(hid), log2Ceil(boomParams.HTWCacheSize))
   private def getTag(hid: HID) = getEntry(hid)._1
   private def getIndex(hid: HID) = getEntry(hid)._2
 
@@ -144,7 +146,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * address as the HTW walks the structure in-memory. Once a handle is fully
    * translated, the translation exits the buffer and is sent elsewhere. */
   private val translation_buffer = RegInit(
-    VecInit.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry(htwL1Bits)))
+    VecInit.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry(htwHT1Bits)))
   )
 
   val timeline = new TimelineTracker()
@@ -184,7 +186,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   }
 
   // XXX: must use RegNext here to break the combinational path
-  //      io.mem.resp.valid → io.mem.req.valid that exists in s_wait_ht_directory.
+  //      io.mem.resp.valid → io.mem.req.valid that exists in s_wait_ht0.
   //      Without this register, MIDAS's token model deadlocks at cycle 3.
   //      The 1-cycle delay is acceptable given the multi-cycle cache latency.
   val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
@@ -203,14 +205,14 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   state := Mux(io.htw_enabled, next_state, HTWState.s_ready)
 
   // Raised to true.B when the currently in-flight handle finishes translation.
-  private val translation_done = state === HTWState.s_wait_ht_entry && mem_resp_valid
+  private val translation_done = state === HTWState.s_wait_ht1 && mem_resp_valid
 
   timeline.trackState("htlb.state", "mem_req", io.mem.req.valid)
   timeline.trackState("htlb.state", "mem_resp", io.mem.resp.valid)
   timeline.trackState("htlb.state", "retry_nack", io.mem.s2_nack)
   midas.targetutils.PerfCounter(io.mem.req.fire, "htlb_mem_req", "htlb_mem_req")
   midas.targetutils.PerfCounter(io.mem.s2_nack &&
-                                (state === HTWState.s_wait_ht_directory || state === HTWState.s_wait_ht_entry),
+                                (state === HTWState.s_wait_ht0 || state === HTWState.s_wait_ht1),
     "htlb_mem_nack", "htlb_mem_nack")
 
 
@@ -220,24 +222,31 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         timeline.cycle, state.asUInt)
     )
   }
-  timeline.trackState("htlb.state", "request_ht_directory", state === HTWState.s_request_ht_directory)
-  timeline.trackState("htlb.state", "wait_ht_directory", state === HTWState.s_wait_ht_directory)
-  timeline.trackState("htlb.state", "request_ht_entry", state === HTWState.s_request_ht_entry)
-  timeline.trackState("htlb.state", "wait_ht_entry", state === HTWState.s_wait_ht_entry)
+  timeline.trackState("htlb.state", "request_ht0", state === HTWState.s_request_ht0)
+  timeline.trackState("htlb.state", "wait_ht0", state === HTWState.s_wait_ht0)
+  timeline.trackState("htlb.state", "request_ht1", state === HTWState.s_request_ht1)
+  timeline.trackState("htlb.state", "wait_ht1", state === HTWState.s_wait_ht1)
   midas.targetutils.PerfCounter(HTWState.waiting(state), "htlb_waiting", "htlb_waiting")
-  midas.targetutils.PerfCounter(state === HTWState.s_request_ht_directory || state === HTWState.s_request_ht_entry, "htlb_mem_stall_cycles", "htlb_mem_stall_cycles")
-  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht_directory || state === HTWState.s_wait_ht_entry, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
+  midas.targetutils.PerfCounter(state === HTWState.s_request_ht0 || state === HTWState.s_request_ht1, "htlb_mem_stall_cycles", "htlb_mem_stall_cycles")
+  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht0 || state === HTWState.s_wait_ht1, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
 
   io.req.ready := state === HTWState.s_ready
   // The HTFill bundle is the HTW's response. It is only valid when the handle
   // is done.
   io.fill.valid := translation_done
   io.fill.bits.hid := hid_req
+
+  // NOTE: HTE here is only to "typecast" the UInt(64.W) from the HellaCacheResp
+  // to a form we prefer using.
   io.fill.bits.xlation.addr := mem_resp_data.asTypeOf(new HTE).addr
 
+  // io.perf.fill := state === HTWState.s_wait_ht1 && mem_resp_valid
+  // perf.fill := state === HTWState.s_wait_ht1 && mem_resp_valid
   io.perf.fill := translation_done
+  perf.fill := translation_done
 
   // Memory Request Construction
+  // TODO: What is this register for? We have the translation buffer for this?
   val inner_walk_base = RegInit(0.U(xLen.W))
 
   switch(state) {
@@ -253,47 +262,47 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           )
         }
 
-        val l0_entry = {
+        val ht0_entry = {
           val cache = translation_buffer
-          val l0_idx = getIndex(walk_hid)
-          cache(l0_idx)
+          val ht0_idx = getIndex(walk_hid)
+          cache(ht0_idx)
         }
-        val l0_tag = getTag(walk_hid)
-        val l0_hit = l0_entry.valid && l0_entry.tag === l0_tag
+        val ht0_tag = getTag(walk_hid)
+        val ht0_hit = ht0_entry.valid && ht0_entry.tag === ht0_tag
 
-        when(l0_hit) {
-          io.events.l0_hit_in_s_ready := true.B
-          inner_walk_base := l0_entry.data
-          walk_addr := l0_entry.data + (hidL1(walk_hid) * 8.U)
+        when(ht0_hit) {
+          io.events.ht0_hit_in_s_ready := true.B
+          inner_walk_base := ht0_entry.data
+          walk_addr := ht0_entry.data + (hidHT1(walk_hid) * 8.U)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
             midas.targetutils.SynthesizePrintf(
-              printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x (L0 hit)\n",
+              printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x (HT0 hit)\n",
                 timeline.cycle, walk_hid.id, walk_addr)
             )
-            next_state := HTWState.s_wait_ht_entry
+            next_state := HTWState.s_wait_ht1
           }.otherwise {
-            next_state := HTWState.s_request_ht_entry
+            next_state := HTWState.s_request_ht1
           }
         }.otherwise {
-          walk_addr := io.htBase + hidL0(walk_hid) * 8.U
+          walk_addr := io.htBase + hidHT0(walk_hid) * 8.U
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
             midas.targetutils.SynthesizePrintf(
               printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
                 timeline.cycle, walk_hid.id, walk_addr)
             )
-            next_state := HTWState.s_wait_ht_directory
+            next_state := HTWState.s_wait_ht0
           }.otherwise {
-            next_state := HTWState.s_request_ht_directory
+            next_state := HTWState.s_request_ht0
           }
         }
       }
     }
 
-    is(HTWState.s_request_ht_directory) {
-      // Request L0 entry from memory
-      walk_addr := io.htBase + hidL0(hid_req) * 8.U
+    is(HTWState.s_request_ht0) {
+      // Request HT0 entry from memory
+      walk_addr := io.htBase + hidHT0(hid_req) * 8.U
       io.mem.req.valid := true.B
 
       // Only advance state if the request actually fired
@@ -307,11 +316,11 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
               timeline.cycle, hid_req.id, walk_addr)
           )
         }
-        next_state := HTWState.s_wait_ht_directory
+        next_state := HTWState.s_wait_ht0
       }
     }
 
-    is(HTWState.s_wait_ht_directory) {
+    is(HTWState.s_wait_ht0) {
       // Wait for outer walk response
       when(mem_resp_valid) {
         midas.targetutils.SynthesizePrintf(
@@ -329,24 +338,24 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         inner_walk_base := mem_resp_data
 
         // Fast Path: Request Second Level immediately
-        walk_addr := mem_resp_data + (hidL1(hid_req) * 8.U)
+        walk_addr := mem_resp_data + (hidHT1(hid_req) * 8.U)
         io.mem.req.valid := true.B
 
         when (io.mem.req.fire) {
-          next_state := HTWState.s_wait_ht_entry
+          next_state := HTWState.s_wait_ht1
         } .otherwise {
-          next_state := HTWState.s_request_ht_entry
+          next_state := HTWState.s_request_ht1
         }
       }.elsewhen(io.mem.s2_nack) {
-        next_state := HTWState.s_request_ht_directory
+        next_state := HTWState.s_request_ht0
       }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
-        next_state := HTWState.s_request_ht_directory
+        next_state := HTWState.s_request_ht0
       }
     }
 
-    is(HTWState.s_request_ht_entry) {
+    is(HTWState.s_request_ht1) {
       // Request Inner Entry (HTE)
-      walk_addr := inner_walk_base + (hidL1(hid_req) * 8.U)
+      walk_addr := inner_walk_base + (hidHT1(hid_req) * 8.U)
 
       io.mem.req.valid := true.B
       when(io.mem.req.fire) {
@@ -354,23 +363,23 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x\n",
             timeline.cycle, hid_req.id, walk_addr)
         )
-        next_state := HTWState.s_wait_ht_entry
+        next_state := HTWState.s_wait_ht1
       }
     }
 
-    is(HTWState.s_wait_ht_entry) {
+    is(HTWState.s_wait_ht1) {
       when(mem_resp_valid) {
         // The response is taken and passed to the HTCache through the io.fill
         // bundle.
         next_state := HTWState.s_ready
       }.elsewhen(io.mem.s2_nack) {
-        next_state := HTWState.s_request_ht_entry
+        next_state := HTWState.s_request_ht1
       }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
-        next_state := HTWState.s_request_ht_entry
+        next_state := HTWState.s_request_ht1
       }
     }
   }
 
-  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht_directory && mem_resp_valid && io.mem.req.fire,
+  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht0 && mem_resp_valid && io.mem.req.fire,
     "htlb_fast_path_fired", "htlb_fast_path_fired")
 }

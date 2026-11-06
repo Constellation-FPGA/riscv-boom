@@ -233,8 +233,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   // io.perf.walk_start := walk_start
   // io.perf.walk_lane := walk_lane
 
-  // val plru_fill = state === HTWState.s_wait_ht_entry && mem_resp_valid
-
   val walk_hid = io.req.bits
   // Memory Request Construction
   val inner_walk_base = RegInit(0.U(xLen.W))
@@ -375,21 +373,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
     is(HTWState.s_wait_ht_entry) {
       when(mem_resp_valid) {
-        // TODO: Insert into L1 entries at valid hid_req
-        // No victim handling needed for simplificaiton, just overwrite
-        // val newEntry = Wire(new HTLBEntryData)
-        // val hte = mem_resp_data.asTypeOf(new HTE)
-        // newEntry.addr := hte.addr
-
-        // val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)
-        // cache.insert
-        // entries(r_idx)(repl_way).insert(r_tag, newEntry)
-        // cache.insert(r_idx, repl_way, r_tag, newEntry)
         // The response is taken and passed to the HTCache through the io.fill
         // bundle.
-
         next_state := HTWState.s_ready
-
       }.elsewhen(io.mem.s2_nack) {
         next_state := HTWState.s_request_ht_entry
       }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {

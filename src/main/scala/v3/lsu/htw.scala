@@ -135,8 +135,15 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   private def getTag(hid: HID) = getEntry(hid)._1
   private def getIndex(hid: HID) = getEntry(hid)._2
 
-  // HTW: L0 Cache
-  private val ht_directory_cache = {
+  /* The translation buffer is the HTW's working space. While the HTW can only
+   * accept one handle to translate at a time, because of latencies when going
+   * to memory, it makes sense for us to have multiple translations in flight at
+   * the same time.
+   *
+   * The HTW uses this translation buffer to build up a handle's translated
+   * address as the HTW walks the structure in-memory. Once a handle is fully
+   * translated, the translation exits the buffer and is sent elsewhere. */
+  private val translation_buffer = {
     if (boomParams.enableTwoStageHTW)
       Some(
         RegInit(
@@ -249,7 +256,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
         if (boomParams.enableTwoStageHTW) {
           val l0_entry = {
-            val cache = ht_directory_cache.get
+            val cache = translation_buffer.get
             val l0_idx = getIndex(walk_hid)
             cache(l0_idx)
           }
@@ -325,7 +332,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           )
 
           // Update L0 Cache
-          val cache = ht_directory_cache.get
+          val cache = translation_buffer.get
           val fill_idx = getIndex(hid_req)
           cache(fill_idx).valid := true.B
           cache(fill_idx).tag := getTag(hid_req)

@@ -89,10 +89,15 @@ final object TranslatedHandle {
   }
 }
 
-// Events for PerfCounters in the LSU. Nothing in the HTLB reads these back.
+/** Events for PerfCounters in the LSU. Nothing in the HTLB reads these back. */
 final class HTLBPerfIO()(implicit p: Parameters) extends BoomBundle()(p) {
+  /** Did the incoming HTLB request trigger/start a handle table walk? */
   val walk_start = Bool()
-  val walk_lane  = UInt(2.W) // the LSU lane whose miss started the walk
+  /** The LSU lane whose miss started the walk.
+   *
+   * XXX: memWidth <= 2 */
+  val walk_lane  = UInt(2.W)
+  /** Was a handle translation sent to the [[HTCache]] to fill a cache slot? */
   val fill       = Bool()
   require(memWidth <= 2,
     s"HTLBPerfIO does not support memWidth > 2, memWidth is $memWdith")

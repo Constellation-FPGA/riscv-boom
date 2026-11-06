@@ -168,8 +168,8 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   }
 
   /* Invalidation */
-  val (e_tag, e_idx) = HTLBUtils.hidSplit(io.inval.bits.hid, idxBits)
-  for (e <- entries(e_idx)) {
+  val (e_tag, e_set) = HTLBUtils.hidSplit(io.inval.bits.hid, idxBits)
+  for (e <- entries(e_set)) {
     when(e_tag === e.tag) {
       e.invalidate()
     }

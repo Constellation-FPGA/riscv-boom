@@ -62,11 +62,8 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   val io = IO(new HTCacheIO(cfg))
 
-  private val idxBits = log2Ceil(cfg.nSets)
-  private val tagBits = Handle.HANDLE_ID_BITS - idxBits
-
   /** A handle table cache entry. */
-  final class Entry extends Bundle {
+  final class Entry(tagBits: Int) extends Bundle {
     val tag = UInt(tagBits.W)
     val data = new TranslatedHandle()
     val valid = Bool()
@@ -84,7 +81,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   final object Entry {
     def apply() = {
-      val e = Wire(new Entry)
+      val e = Wire(new Entry(cfg.tagBits))
       e.valid := false.B
       e.tag := DontCare
       e.data := DontCare
@@ -108,10 +105,10 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   /* "used" is set on a hit and cleared on a fill. */
   val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
 
-  val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)
+  val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, cfg.idxBits)
 
-  val lookup_hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._1)
-  val lookup_hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._2)
+  val lookup_hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, cfg.idxBits)._1)
+  val lookup_hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, cfg.idxBits)._2)
 
   // Use PLRU to pick way or first invalid
   val repl_way = {
@@ -168,7 +165,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   }
 
   /* Invalidation */
-  val (e_tag, e_set) = HTLBUtils.hidSplit(io.inval.bits.hid, idxBits)
+  val (e_tag, e_set) = HTLBUtils.hidSplit(io.inval.bits.hid, cfg.idxBits)
   for (e <- entries(e_set)) {
     when(e_tag === e.tag) {
       e.invalidate()

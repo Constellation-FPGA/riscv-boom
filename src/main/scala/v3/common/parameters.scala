@@ -106,8 +106,8 @@ case class BoomCoreParams(
 
   /* Yukon stuff */
   usingHandles: Boolean = false,
-  nL1HTLBWays: Int = 4,
-  nL1HTLBSets: Int = 4,
+  nHTLBSets: Int = 4,
+  nHTLBWays: Int = 4,
   enableHTLBSetCounters: Boolean = false, // one PerfCounter per HTLB set (walks per set)
   enablePHTSupport: Boolean = false,
   /** Make the Handle Table Walker use a 2-layer/-stage implementation. */

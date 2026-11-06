@@ -312,8 +312,8 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
         pht_enabled = true,
       ),
       htCacheCfg = HTCacheConfig(
-        nSets = boomParams.nL1HTLBSets,
-        nWays = boomParams.nL1HTLBWays,
+        nSets = boomParams.nHTLBSets,
+        nWays = boomParams.nHTLBWays,
       ),
     )
   ))

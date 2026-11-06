@@ -109,8 +109,8 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, idxBits)
 
-  val hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._1)
-  val hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._2)
+  val lookup_hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._1)
+  val lookup_hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, idxBits)._2)
 
   // Use PLRU to pick way or first invalid
   val candidate_repl_way =
@@ -131,7 +131,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
    * Hits per lane (memWidth), per set, and per way. Produces a true.B when the
    * HTCache Entry in the specified lane-set-way combination is a hit.
    * NOTE: This produces a Vec(Vec(Bool))*/
-  val real_hits = widthMap(w => VecInit(entries(hid_set(w)).map(io.lookup(w).en && _.hit(hid_tag(w)))))
+  val real_hits = widthMap(w => VecInit(entries(lookup_hid_set(w)).map(io.lookup(w).en && _.hit(lookup_hid_tag(w)))))
   val hit_way = widthMap(w => OHToUInt(real_hits(w).asUInt))
 
   // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt
@@ -140,7 +140,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   // applies the updates in order: lane 0, lane 1, ..., then the fill last.
   val plru_hit = widthMap(w => io.lookup(w).access && real_hits(w).asUInt.orR)
   plru.access(
-    hid_set :+ r_idx,
+    lookup_hid_set :+ r_idx,
     widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
 
   // No victim handling needed for simplification, just overwrite
@@ -172,7 +172,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   io.used := used
   for (w <- 0 until memWidth) {
     when(io.lookup(w).en && io.lookup(w).hit) {
-      used(hid_set(w))(OHToUInt(real_hits(w))) := true.B
+      used(lookup_hid_set(w))(OHToUInt(real_hits(w))) := true.B
     }
   }
   when(io.fill.valid) { used(r_idx)(repl_way) := false.B }

@@ -39,14 +39,12 @@ case class HTWConfig(
   pht_enabled: Boolean = true,
 )
 
-// TODO: Rename this to HTWPerf!
-/** Side-band information about the state of the HTW and major events within it.
+/** Side-band information about the performance of the HTW's internals.
  *
  * This is primarily used with performance counters and analyses. No IO
  * critical for the HTW to function should be placed in this bundle.
  */
-// final class HTWPerf extends Bundle {
-final class HTWEvents extends Bundle {
+final class HTWPerf extends Bundle {
   /** Outputs true.B if an incoming handle translation request matches an
    * already in-flight and not yet completed handle translation request. */
   val ht0_hit_in_s_ready = Output(Bool())
@@ -66,11 +64,8 @@ final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
   val htw_enabled = Input(Bool())
   /** The base address of the handle table in memory. */
   val htBase = Input(UInt(xLen.W))
-  /** Output-only wire for the current state of the HTW.
-   * FIXME: This should need to be an output from the HTW. It is only used
-   * to have PerfCounters in the upper-level [[YukonHTLB]]. */
-// TODO: Rename this to perf!
-  val events = Output(new HTWEvents())
+  /** Output-only wire for performance state of the HTW. */
+  val perf = Output(new HTWPerf())
   /** Connection to memory to translate from the handle table in-memory. */
   val mem = new HellaCacheIO
 }
@@ -117,7 +112,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   }
 
   val io = IO(new HTWIO(cfg))
-  io.events.ht0_hit_in_s_ready := false.B
+  io.perf.ht0_hit_in_s_ready := false.B
 
   /* The zeroth level is indexed by the top 12 bits of a handle ID and the
    * first level is indexed by the remaining bits (18 bits in this case). */
@@ -278,7 +273,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         val ht0_hit = ht0_entry.valid && ht0_entry.tag === ht0_tag
 
         when(ht0_hit) {
-          io.events.ht0_hit_in_s_ready := true.B
+          io.perf.ht0_hit_in_s_ready := true.B
           walk_addr := ht0_entry.data + (hidHT1(walk_hid) * 8.U)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {

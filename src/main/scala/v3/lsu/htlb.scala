@@ -402,7 +402,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
   // FIXME: Bring these PerfCounters back
   midas.targetutils.PerfCounter(PopCount(widthMap(w => io.req(w).fire && htCache_hit(w) && hm_enabled(w))), "htlb_hit", "htlb_hit")
-  midas.targetutils.PerfCounter(any_miss && htw.io.events.ht0_hit_in_s_ready, "htlb_ht0_hit", "htlb_ht0_hit")
+  midas.targetutils.PerfCounter(any_miss && htw.io.perf.ht0_hit_in_s_ready, "htlb_ht0_hit", "htlb_ht0_hit")
 
   for (w <- 0 until memWidth) {
     cache.io.lookup(w).en     := hm_enabled(w)
@@ -515,7 +515,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     midas.targetutils.PerfCounter(walk_start, "htlb_walk_start", "htlb_walk_start")
     midas.targetutils.PerfCounter.identity(walk_max, "htlb_walk_lat_max", "htlb_walk_lat_max")
 
-    midas.targetutils.PerfCounter(walk_start && !htw.io.events.ht0_hit_in_s_ready,
+    midas.targetutils.PerfCounter(walk_start && !htw.io.perf.ht0_hit_in_s_ready,
       "htlb_walk_ht0_miss", "htlb_walk_ht0_miss")
 
     if (boomParams.enableHTLBSetCounters) {

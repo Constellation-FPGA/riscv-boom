@@ -356,7 +356,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val htw = Module(new HTW(cfg.htwCfg))
   htw.io.htBase := io.htBase
   htw.io.mem <> io.mem
-  io.miss_rdy := htw.io.ready
+  io.miss_rdy := htw.io.req.ready
   cache.io.fill := htw.io.fill
 
   io.perf.fill := htw.io.perf.fill

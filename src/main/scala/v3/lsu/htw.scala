@@ -94,8 +94,6 @@ final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
    * This also controls whether or not memory requests are sent off to the rest
    * of the memory subsystem through HellaCache. */
   val htw_enabled = Input(Bool())
-  /** Outputs true.B while the HTW is ready to accept new handles to translate. */
-  val ready = Output(Bool())
   /** The base address of the handle table in memory. */
   val htBase = Input(UInt(xLen.W))
   /** Output-only wire for the current state of the HTW.
@@ -196,8 +194,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   val next_state = WireDefault(state)
   state := Mux(io.htw_enabled, next_state, HTWState.s_ready)
   io.events.state := state
-  // FIXME: io.ready can be removed because io.req.ready exists too.
-  io.ready := state === HTWState.s_ready
 
   timeline.trackState("htlb.state", "mem_req", io.mem.req.valid)
   timeline.trackState("htlb.state", "mem_resp", io.mem.resp.valid)

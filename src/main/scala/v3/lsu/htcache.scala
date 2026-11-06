@@ -182,15 +182,6 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(io.fill.valid && entries(r_idx)(repl_way).valid && !used(r_idx)(repl_way),
     "htlb_evict_unused", "htlb_evict_unused")
 
-  // if (boomParams.enableTwoStageHTW) {
-  //   val l0_idx = getIndex(io.htInval)
-  //   val l0_tag = getTag(io.htInval)
-  //   val cache = ht_directory_cache.get
-  //   when(cache(l0_idx).valid && cache(l0_idx).tag === l0_tag) {
-  //     cache(l0_idx).valid := false.B
-  //   }
-  // }
-
   val timeline = new TimelineTracker()
 
   for (s <- 0 until cfg.nSets) {

@@ -208,6 +208,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
   state := Mux(io.htw_enabled, next_state, HTWState.s_ready)
 
+  // Raised to true.B when the currently in-flight handle finishes translation.
+  private val translation_done = state === HTWState.s_wait_ht_entry && mem_resp_valid
+
   timeline.trackState("htlb.state", "mem_req", io.mem.req.valid)
   timeline.trackState("htlb.state", "mem_resp", io.mem.resp.valid)
   timeline.trackState("htlb.state", "retry_nack", io.mem.s2_nack)
@@ -232,11 +235,13 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(state === HTWState.s_wait_ht_directory || state === HTWState.s_wait_ht_entry, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
 
   io.req.ready := state === HTWState.s_ready
-  io.fill.valid := state === HTWState.s_wait_ht_entry && mem_resp_valid
+  // The HTFill bundle is the HTW's response. It is only valid when the handle
+  // is done.
+  io.fill.valid := translation_done
   io.fill.bits.hid := hid_req
   io.fill.bits.xlation.addr := mem_resp_data.asTypeOf(new HTE).addr
 
-  io.perf.fill := state === HTWState.s_wait_ht_entry && mem_resp_valid
+  io.perf.fill := translation_done
 
   // Memory Request Construction
   val inner_walk_base = RegInit(0.U(xLen.W))

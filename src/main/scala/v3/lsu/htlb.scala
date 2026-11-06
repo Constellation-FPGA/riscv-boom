@@ -90,10 +90,12 @@ final object TranslatedHandle {
 }
 
 // Events for PerfCounters in the LSU. Nothing in the HTLB reads these back.
-class HTLBPerfIO extends Bundle {
+final class HTLBPerfIO()(implicit p: Parameters) extends BoomBundle()(p) {
   val walk_start = Bool()
-  val walk_lane  = UInt(2.W) // the LSU lane whose miss started the walk (memWidth <= 2)
+  val walk_lane  = UInt(2.W) // the LSU lane whose miss started the walk
   val fill       = Bool()
+  require(memWidth <= 2,
+    s"HTLBPerfIO does not support memWidth > 2, memWidth is $memWdith")
 }
 
 /** Describes the configuration of an [[HTLB]]'s and its internal components.

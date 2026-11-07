@@ -10,15 +10,6 @@ import freechips.rocketchip.util.Split
 
 import boom.v3.common._
 
-/** The result from a walk through the handle table in memory. */
-// FIXME: Should this go in htcache.scala instead?
-final class HTFill(implicit p: Parameters) extends BoomBundle()(p) {
-  /** The HID that should fill (be inserted into) the handle cache. */
-  val hid = new HID()
-  /** The address this translated handle maps to. */
-  val xlation = new TranslatedHandle()
-}
-
 /** Describes the configuration of an [[HTW]].
  *
  * @param pht_enabled True if the address in the htBase CSR is physical.
@@ -43,7 +34,7 @@ final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
   val req = Flipped(Decoupled(new HID()))
   /** A translated handle, to be passed to the requestor to fill something,
    * usually the [[HTCache]] cache. */
-  val fill = Output(Valid(new HTFill()))
+  val fill = Output(Valid(new HandleTranslation()))
   /** Incoming request to invalidate a handle HID. */
   val inval = Input(Valid(new HandleInvalidation()))
   /** When true.B, enable the HTW. Otherwise HTW is kept off.
@@ -230,9 +221,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
   io.req.ready := state === HTWState.s_ready
 
-  /* The HTFill bundle is the HTW's response. It is only valid when the handle
-   * is done. When the translation is done, the memory response data is the
-   * handle's translated virtual address.*/
+  /* The HandleTranslation bundle is the HTW's response. It is only valid when
+   * the handle translation is done. When the translation is done, the memory
+   * response data is the handle's translated virtual address.*/
   io.fill.valid := translation_done
   io.fill.bits.hid := hid_req
   io.fill.bits.xlation := TranslatedHandle(mem_resp_data.addr)

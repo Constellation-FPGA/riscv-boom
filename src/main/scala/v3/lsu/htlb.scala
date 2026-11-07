@@ -89,6 +89,16 @@ final object TranslatedHandle {
   }
 }
 
+/** A fully translated handle. Tracks the handle HID that was translated and the
+ * virtual address that it maps too. */
+final class HandleTranslation(implicit p: Parameters)
+  extends BoomBundle()(p) {
+  /** The HID that should fill (be inserted into) the handle cache. */
+  val hid = new HID()
+  /** The address this translated handle maps to. */
+  val xlation = new TranslatedHandle()
+}
+
 /** Events for PerfCounters in the LSU. Nothing in the HTLB reads these back. */
 final class HTLBPerfIO()(implicit p: Parameters) extends BoomBundle()(p) {
   /** Did the incoming HTLB request trigger/start a handle table walk? */

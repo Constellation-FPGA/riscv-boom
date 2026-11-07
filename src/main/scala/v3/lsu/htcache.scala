@@ -127,6 +127,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     }
   }
 
+  /* Insert the handle's translation into the HTCache. */
   when(io.fill.valid) {
     val translation = io.fill.bits.xlation
     // No victim handling needed, just overwrite

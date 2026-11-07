@@ -158,12 +158,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   // Uncached response handling (if ever valid)
   io.mem.uncached_resp.foreach(_.ready := true.B)
 
-  // Disable blocks new memory requests, but does not cancel accepted requests.
-  // FIXME: Remove this block?
-  when(!io.htw_enabled) {
-    io.mem.req.valid := false.B
-  }
-
   // XXX: must use RegNext here to break the combinational path
   //      io.mem.resp.valid → io.mem.req.valid that exists in s_wait_ht0.
   //      Without this register, MIDAS's token model deadlocks at cycle 3.
@@ -376,5 +370,15 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         next_state := HTWState.s_request_ht1
       }
     }
+  }
+
+  /* New memory requests if the HTW is disabled in the middle of translating
+   * a handle.
+   *
+   * Because this comes after the switch block, this will be evaluated after the
+   * all of the switch's cases, which means the memory request does not actually
+   * go out. */
+  when(!io.htw_enabled) {
+    io.mem.req.valid := false.B
   }
 }

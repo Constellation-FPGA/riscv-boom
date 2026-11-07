@@ -58,10 +58,6 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   val io = IO(new HTCacheIO(cfg))
 
-  /* FIXME: Move all definitions of widthMap out to a common object method.
-   * Perhaps LSU.widthMap? */
-  def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
-
   /* NOTE: RegInit is important so that reset signals actually reset the cache
    * structure.
    *
@@ -104,17 +100,17 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
    * Hits per lane (memWidth), per set, and per way. Produces a true.B when the
    * HTCache Entry in the specified lane-set-way combination is a hit.
    * NOTE: This produces a Vec(Vec(Bool))*/
-  val real_hits = widthMap(w => VecInit(entries(lookup_hid_set(w)).map(io.lookup(w).hid.valid && _.hit(lookup_hid_tag(w)))))
-  val hit_way = widthMap(w => OHToUInt(real_hits(w).asUInt))
+  val real_hits = LSU.widthMap(memWidth)(w => VecInit(entries(lookup_hid_set(w)).map(io.lookup(w).hid.valid && _.hit(lookup_hid_tag(w)))))
+  val hit_way = LSU.widthMap(memWidth)(w => OHToUInt(real_hits(w).asUInt))
 
   // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt
   // (OH1ToUInt gave way k+1). A fill marks the new entry as recently used, so
   // the next fill in the set does not evict it before the retry. access()
   // applies the updates in order: lane 0, lane 1, ..., then the fill last.
-  val plru_hit = widthMap(w => io.lookup(w).hid.valid && real_hits(w).asUInt.orR)
+  val plru_hit = LSU.widthMap(memWidth)(w => real_hits(w).asUInt.orR)
   plru.access(
     lookup_hid_set :+ r_idx,
-    widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
+    LSU.widthMap(memWidth)(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
 
   for (w <- 0 until memWidth) {
     val this_lane_hit = real_hits(w).asUInt.orR

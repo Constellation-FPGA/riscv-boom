@@ -383,16 +383,15 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     io.resp(w).handle_fault.st := false.B
   }
 
-  val htCache_hit = widthMap(w => cache.io.lookup(w).hit)
-  val htCache_way = widthMap(w => cache.io.lookup(w).way)
+  val htCache_hit = LSU.widthMap(memWidth)(w => cache.io.lookup(w).hit)
+  val htCache_way = LSU.widthMap(memWidth)(w => cache.io.lookup(w).way)
 
   val timeline = new TimelineTracker()
 
-  def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
-  val hm_enabled = widthMap(w => !io.req(w).bits.passthrough)
-  val hids = widthMap(w => io.req(w).bits.haddr.hid)
+  val hm_enabled = LSU.widthMap(memWidth)(w => !io.req(w).bits.passthrough)
+  val hids = LSU.widthMap(memWidth)(w => io.req(w).bits.haddr.hid)
 
-  val htlb_miss = widthMap(w => {
+  val htlb_miss = LSU.widthMap(memWidth)(w => {
     io.req(w).valid && hm_enabled(w) && !htCache_hit(w)
   })
 
@@ -404,14 +403,14 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // Walker arbitration: the lowest lane that misses starts the walk. A miss on
   // another lane in the same cycle reports a miss and retries, as a miss while
   // the walker is busy does.
-  val lane_miss = widthMap(w => io.req(w).fire && htlb_miss(w))
+  val lane_miss = LSU.widthMap(memWidth)(w => io.req(w).fire && htlb_miss(w))
   val any_miss  = lane_miss.asUInt.orR
   // Which lane number will be walked? Lower lanes are prioritized higher.
   val walk_lane = if (memWidth == 1) 0.U else PriorityEncoder(lane_miss.asUInt)
   val walk_hid  = hids(walk_lane)
 
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
-  midas.targetutils.PerfCounter(PopCount(widthMap(w => io.req(w).fire && htCache_hit(w) && hm_enabled(w))), "htlb_hit", "htlb_hit")
+  midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => io.req(w).fire && htCache_hit(w) && hm_enabled(w))), "htlb_hit", "htlb_hit")
   midas.targetutils.PerfCounter(any_miss && htw.io.perf.ht0_hit_in_s_ready, "htlb_ht0_hit", "htlb_ht0_hit")
 
   for (w <- 0 until memWidth) {
@@ -503,10 +502,10 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val hid_req = htw.io.fill.bits.hid
 
     // Misses in the cycle a walk starts that did not start it (a lower lane did).
-    val miss_walker_taken = widthMap(w => lane_miss(w) && walk_start && walk_lane =/= w.U)
-    val miss_busy = widthMap(w => lane_miss(w) && !htw.io.req.ready)
-    midas.targetutils.PerfCounter(PopCount(widthMap(w => miss_busy(w) && hids(w) === hid_req)), "htlb_miss_busy_same", "htlb_miss_busy_same")
-    midas.targetutils.PerfCounter(PopCount(widthMap(w => miss_busy(w) && hids(w) =/= hid_req)), "htlb_miss_busy_other", "htlb_miss_busy_other")
+    val miss_walker_taken = LSU.widthMap(memWidth)(w => lane_miss(w) && walk_start && walk_lane =/= w.U)
+    val miss_busy = LSU.widthMap(memWidth)(w => lane_miss(w) && !htw.io.req.ready)
+    midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => miss_busy(w) && hids(w) === hid_req)), "htlb_miss_busy_same", "htlb_miss_busy_same")
+    midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => miss_busy(w) && hids(w) =/= hid_req)), "htlb_miss_busy_other", "htlb_miss_busy_other")
     midas.targetutils.PerfCounter(PopCount(miss_walker_taken), "htlb_miss_walker_taken", "htlb_miss_walker_taken")
 
     // Collect walk performance numbers

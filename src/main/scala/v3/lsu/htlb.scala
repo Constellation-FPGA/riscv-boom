@@ -396,7 +396,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   })
 
   for (w <- 0 until memWidth) {
-    cache.io.lookup(w).hid.valid := hm_enabled(w)
+    cache.io.lookup(w).hid.valid := io.req(w).valid && hm_enabled(w)
     cache.io.lookup(w).hid.bits  := hids(w)
   }
 
@@ -412,11 +412,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
   midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => io.req(w).fire && htCache_hit(w) && hm_enabled(w))), "htlb_hit", "htlb_hit")
   midas.targetutils.PerfCounter(any_miss && htw.io.perf.ht0_hit_in_s_ready, "htlb_ht0_hit", "htlb_ht0_hit")
-
-  for (w <- 0 until memWidth) {
-    cache.io.lookup(w).hid.valid := io.req(w).valid && hm_enabled(w)
-    cache.io.lookup(w).hid.bits  := hids(w)
-  }
 
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------

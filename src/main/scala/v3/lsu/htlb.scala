@@ -397,9 +397,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   })
 
   for (w <- 0 until memWidth) {
-    cache.io.lookup(w).en     := hm_enabled(w)
-    cache.io.lookup(w).access := io.req(w).valid
-    cache.io.lookup(w).hid    := hids(w)
+    cache.io.lookup(w).hid.valid := hm_enabled(w)
+    cache.io.lookup(w).hid.bits  := hids(w)
   }
 
   // Walker arbitration: the lowest lane that misses starts the walk. A miss on
@@ -416,9 +415,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(any_miss && htw.io.perf.ht0_hit_in_s_ready, "htlb_ht0_hit", "htlb_ht0_hit")
 
   for (w <- 0 until memWidth) {
-    cache.io.lookup(w).en     := hm_enabled(w)
-    cache.io.lookup(w).access := io.req(w).valid
-    cache.io.lookup(w).hid    := hids(w)
+    cache.io.lookup(w).hid.valid := io.req(w).valid && hm_enabled(w)
+    cache.io.lookup(w).hid.bits  := hids(w)
   }
 
   // ------------------------------------------------------------------------------------------------

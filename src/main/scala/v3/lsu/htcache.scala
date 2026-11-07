@@ -25,14 +25,8 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
   extends BoomBundle {
 
   final class HTCacheLookup(cfg: HTCacheConfig) extends Bundle {
-    /** Enable this handle table cache to hit. false.B for passthrough requests. */
-    // FIXME: Rename back to passthrough to match HTLB from before.
-    val en = Input(Bool())
-    /** This lookup is a real access: a hit updates the replacement state. */
-    // FIXME: Do we really need this if we have en/passthrough?
-    val access = Input(Bool())
     /** The HID that is being looked up in the handle cache. */
-    val hid = Input(new HID())
+    val hid = Input(Valid(new HID()))
     /** Did the lookup request hit in the cache? */
     val hit = Output(Bool())
     /** The way that had a hit. Meaningless when [[hit]] is false.B. */
@@ -84,8 +78,12 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, cfg.idxBits)
 
-  val lookup_hid_tag = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, cfg.idxBits)._1)
-  val lookup_hid_set = io.lookup.map(l => HTLBUtils.hidSplit(l.hid, cfg.idxBits)._2)
+  val lookup_hid_tag = io.lookup.map(l => {
+    HTLBUtils.hidSplit(l.hid.bits, cfg.idxBits)._1
+  })
+  val lookup_hid_set = io.lookup.map(l => {
+    HTLBUtils.hidSplit(l.hid.bits, cfg.idxBits)._2
+  })
 
   // Use PLRU to pick way or first invalid
   val repl_way = {
@@ -106,20 +104,21 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
    * Hits per lane (memWidth), per set, and per way. Produces a true.B when the
    * HTCache Entry in the specified lane-set-way combination is a hit.
    * NOTE: This produces a Vec(Vec(Bool))*/
-  val real_hits = widthMap(w => VecInit(entries(lookup_hid_set(w)).map(io.lookup(w).en && _.hit(lookup_hid_tag(w)))))
+  val real_hits = widthMap(w => VecInit(entries(lookup_hid_set(w)).map(io.lookup(w).hid.valid && _.hit(lookup_hid_tag(w)))))
   val hit_way = widthMap(w => OHToUInt(real_hits(w).asUInt))
 
   // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt
   // (OH1ToUInt gave way k+1). A fill marks the new entry as recently used, so
   // the next fill in the set does not evict it before the retry. access()
   // applies the updates in order: lane 0, lane 1, ..., then the fill last.
-  val plru_hit = widthMap(w => io.lookup(w).access && real_hits(w).asUInt.orR)
+  val plru_hit = widthMap(w => io.lookup(w).hid.valid && real_hits(w).asUInt.orR)
   plru.access(
     lookup_hid_set :+ r_idx,
     widthMap(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
 
   for (w <- 0 until memWidth) {
-    io.lookup(w).hit  := real_hits(w).asUInt.orR
+    val this_lane_hit = real_hits(w).asUInt.orR
+    io.lookup(w).hit  := this_lane_hit
     io.lookup(w).way  := hit_way(w)
     io.lookup(w).data := entries(lookup_hid_set(w))(hit_way(w)).data
 
@@ -127,7 +126,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
      * has a hit.
      *
      * The fill write is last in the source file, so fills win. */
-    when(io.lookup(w).en && io.lookup(w).hit) {
+    when(io.lookup(w).hid.valid && this_lane_hit) {
       used(lookup_hid_set(w))(OHToUInt(real_hits(w))) := true.B
     }
   }

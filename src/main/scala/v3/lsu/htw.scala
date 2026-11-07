@@ -99,16 +99,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     val addr = UInt(maxSVAddrBits.W)
   }
 
-  /** TODO: Document this.
-   * ???
-   */
-  final class TopLevelCacheEntry(htwHT1Bits: Int)(implicit p: Parameters)
-    extends BoomBundle()(p) {
-    val valid = Bool()
-    val tag = UInt(htwHT1Bits.W) // TODO: Restore this field
-    val data = UInt(maxSVAddrBits.W)     // Store the base address for inner walks
-  }
-
   val io = IO(new HTWIO(cfg))
   io.perf.ht0_hit_in_s_ready := false.B
 
@@ -140,9 +130,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * The HTW uses this translation buffer to build up a handle's translated
    * address as the HTW walks the structure in-memory. Once a handle is fully
    * translated, the translation exits the buffer and is sent elsewhere. */
-  private val translation_buffer = RegInit(
-    VecInit.fill(boomParams.HTWCacheSize)(0.U.asTypeOf(new TopLevelCacheEntry(htwHT1Bits)))
-  )
+  private val translation_buffer = RegInit(VecInit.fill(boomParams.HTWCacheSize)(
+    TaggedCacheEntry(htwHT1Bits, UInt(maxSVAddrBits.W))
+  ))
 
   val timeline = new TimelineTracker()
 

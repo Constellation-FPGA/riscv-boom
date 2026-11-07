@@ -64,33 +64,6 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   val io = IO(new HTCacheIO(cfg))
 
-  /** A handle table cache entry. */
-  final class Entry(tagBits: Int) extends Bundle {
-    val tag = UInt(tagBits.W)
-    val data = new TranslatedHandle()
-    val valid = Bool()
-
-    def hit(tag: UInt) = { valid && this.tag === tag }
-
-    def insert(tag: UInt, translation: TranslatedHandle) = {
-      this.tag := tag
-      valid := true.B
-      data := translation
-    }
-
-    def invalidate() = { valid := false.B }
-  }
-
-  final object Entry {
-    def apply() = {
-      val e = Wire(new Entry(cfg.tagBits))
-      e.valid := false.B
-      e.tag := DontCare
-      e.data := DontCare
-      e
-    }
-  }
-
   /* FIXME: Move all definitions of widthMap out to a common object method.
    * Perhaps LSU.widthMap? */
   def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
@@ -101,7 +74,9 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
    * XXX: entries is shared between ALL lanes (memWidth)! This will be
    * problematic if the memWidth grows too high because we will end up making
    * a very high-port count memory block! */
-  val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(Entry()))
+  val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(
+    TaggedCacheEntry(cfg.tagBits, new TranslatedHandle())
+  ))
   val plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
 
   /* "used" is set on a hit and cleared on a fill. */

@@ -124,6 +124,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     TaggedCacheEntry(htwHT1Bits, UInt(maxSVAddrBits.W))
   ))
 
+  when (io.inval.valid && io.inval.bits.all) {
+    translation_buffer.foreach(_.invalidate())
+  }
+
   val timeline = new TimelineTracker()
 
   // Memory Request Construction

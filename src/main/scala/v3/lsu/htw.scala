@@ -318,7 +318,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         translation_buffer(fill_idx).tag := getTag(hid_req)
         translation_buffer(fill_idx).data := mem_resp_data.addr
 
-        // Fast Path: Request Second Level immediately
+        /* NOTE: This is is a "fast path" optimization. If the HTW gets a
+         * response for the HT0 request, the HTW will attempt to send out a
+         * translation request for the leaf handle table entry (in HT1)
+         * IN THE SAME CYCLE the HT0 response arrives. */
         walk_addr := mem_resp_data.addr + (hidHT1(hid_req) * 8.U)
         io.mem.req.valid := true.B
 

@@ -386,8 +386,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val htCache_hit = LSU.widthMap(memWidth)(w => cache.io.lookup(w).hit)
   val htCache_way = LSU.widthMap(memWidth)(w => cache.io.lookup(w).way)
 
-  val timeline = new TimelineTracker()
-
   val hm_enabled = LSU.widthMap(memWidth)(w => !io.req(w).bits.passthrough)
   val hids = LSU.widthMap(memWidth)(w => io.req(w).bits.haddr.hid)
 
@@ -455,6 +453,17 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // cache.io.inval.bits.all := io.clear_htlb && inval_all
   cache.io.inval.bits.hid := io.htInval
 
+  io.htInvald := do_htInval
+
+  // ------------------------------------------------------------------------------------------------
+  // ------------------------------------------------------------------------------------------------
+  // PerfCounters (see thesis todo/01-htlb-counters.md). These only observe state.
+  // The description equals the label: thesis src/yukon/bench.py names result columns by description.
+  // ------------------------------------------------------------------------------------------------
+  // ------------------------------------------------------------------------------------------------
+
+  val timeline = new TimelineTracker()
+
   when(io.clear_htlb) {
     midas.targetutils.SynthesizePrintf(
       printf("HTLB.clear_htlb: cycle=%d all entries invalidated\n", timeline.cycle)
@@ -467,20 +476,11 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     )
   }
 
-  io.htInvald := do_htInval
-
   midas.targetutils.PerfCounter(io.clear_htlb, "htlb_clear", "htlb_clear")
   midas.targetutils.PerfCounter(do_htInval && !inval_all, "htlb_inval_one", "htlb_inval_one")
   midas.targetutils.PerfCounter(do_htInval && inval_all, "htlb_inval_all", "htlb_inval_all")
   midas.targetutils.PerfCounter(!io.htInval.hidZero() && !htw.io.req.ready,
     "htlb_inval_wait", "htlb_inval_wait")
-
-  // ------------------------------------------------------------------------------------------------
-  // ------------------------------------------------------------------------------------------------
-  // PerfCounters (see thesis todo/01-htlb-counters.md). These only observe state.
-  // The description equals the label: thesis src/yukon/bench.py names result columns by description.
-  // ------------------------------------------------------------------------------------------------
-  // ------------------------------------------------------------------------------------------------
 
   val walk_start = htw.io.req.ready && io.htlb_enabled && !do_htInval && any_miss
 

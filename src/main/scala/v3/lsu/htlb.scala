@@ -355,7 +355,10 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   /* The HTW & HTCache are in the same clock and reset domain as the HTLB.
    * This means that both modules' internal storage will be reset at the same
    * time as the outer YukonHTLB. So we do not need any special logic for
-   * invalidating their contents when reset is triggered. */
+   * invalidating their contents when reset is triggered.
+   *
+   * Every LSU lane (memWidth) has its own lookup port to the HTCache. However,
+   * there is only one walker (HTW) and it is shared between all lanes.*/
   val cache = Module(new HTCache(cfg.htCacheCfg))
   val htw = Module(new HTW(cfg.htwCfg))
   htw.io.htBase := io.htBase
@@ -375,7 +378,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   val timeline = new TimelineTracker()
 
-  // Utilities. Every LSU lane (memWidth) has its own lookup port. There is one walker.
   def widthMap[T <: Data](f: Int => T) = VecInit((0 until memWidth).map(f))
   val hm_enabled = widthMap(w => !io.req(w).bits.passthrough)
   val hids = widthMap(w => io.req(w).bits.haddr.hid)

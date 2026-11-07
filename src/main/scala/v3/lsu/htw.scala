@@ -76,12 +76,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     def waiting(state: HTWState.Type): Bool = state =/= s_ready
   }
 
-  /** An internal class used to cast the 8-byte 64-bit result from memory into
-   * an object with named fields that are easier for us to reason about and work
-   * work.
+  /** A translation response. This is an internal class used to cast the 8-byte
+   * 64-bit result from memory into an object with named fields that are easier
+   * for us to reason about and work work.
    */
   // Make this private in the future?
-  final class HTE(implicit p: Parameters) extends BoomBundle()(p) {
+  final class XLateResp(implicit p: Parameters) extends BoomBundle()(p) {
     /** This field should be completely ignored. */
     val ignored = UInt((xLen - (new TranslatedHandle).addr.getWidth).W)
     /** The virtual address for the handle table request.
@@ -166,7 +166,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   //      The 1-cycle delay is acceptable given the multi-cycle cache latency.
   val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
   // "Typecast" the UInt(64.W) from the HellaCacheResp to a form we prefer.
-  val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new HTE)
+  val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new XLateResp)
 
   /* The HID that is currently being translated/walked.
    * The register "holds onto" the HID that was requested so that subsequent FSM

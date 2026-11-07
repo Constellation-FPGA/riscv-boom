@@ -104,7 +104,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
   /* The zeroth level is indexed by the top 12 bits of a handle ID and the
    * first level is indexed by the remaining bits (18 bits in this case). */
-  /* FIXME: Should these be parameters to the HTW class? */
   private val htwHT0Bits = 12
   private val htwHT1Bits = Handle.HANDLE_ID_BITS - htwHT0Bits
 

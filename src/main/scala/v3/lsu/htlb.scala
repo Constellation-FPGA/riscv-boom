@@ -488,8 +488,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // There seem to be an awful lot of connections that must be made to grab
   // the relevant logics to trigger the PerfCounters.
   locally {
-    val hid_set = widthMap(w => HTLBUtils.hidSplit(hids(w), cfg.htCacheCfg.nSets)._2)
-
     val fill = htw.io.fill.valid
     // The HID being walked. HTW holds it on its input fill line for the duration of the walk?
     // FIXME: Validate the assumption above is true!

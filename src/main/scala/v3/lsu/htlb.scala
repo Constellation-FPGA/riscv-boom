@@ -492,9 +492,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   io.perf.walk_start := walk_start
   io.perf.walk_lane  := walk_lane
 
-  // FIXME: Can these PerfCounters go into the child modules?
-  // There seem to be an awful lot of connections that must be made to grab
-  // the relevant logics to trigger the PerfCounters.
   locally {
     val fill = htw.io.fill.valid
     // The HID being walked. HTW holds it on its input fill line for the duration of the walk?

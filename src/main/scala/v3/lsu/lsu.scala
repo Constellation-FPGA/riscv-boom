@@ -156,7 +156,8 @@ class LSUCoreIO(implicit p: Parameters) extends BoomBundle()(p)
 
   /** The base address of the Handle Table in memory. */
   val htBase = Input(UInt(xLen.W))
-  /** The size of the handle table in memory, in bytes. */
+  /** The size of the handle table in memory. The size is the maximum number of
+   * [[Handle]]s that will be in the handle table at once. */
   val htSize = Input(UInt(xLen.W))
   /** The base address where HTLB dumps should be placed in memory. */
   val htDump = Input(UInt(xLen.W))

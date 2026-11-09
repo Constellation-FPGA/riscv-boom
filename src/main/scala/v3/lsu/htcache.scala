@@ -10,8 +10,9 @@ import boom.v3.common._
 
 /** Describes the configuration of an [[HTCache]].
  *
- * @param nSets The number of sets available inside this HTLB.
- * @param nWays The number of ways available inside each set. Each way is identical.
+ * @param nSets The number of sets in this cache.
+ * @param nWays The number of ways available inside each set. Each way is
+ *              identical.
  */
 case class HTCacheConfig(
   nSets: Int,

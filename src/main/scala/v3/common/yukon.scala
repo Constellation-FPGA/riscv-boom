@@ -8,6 +8,7 @@ import chisel3.util._
 final class HID extends Bundle {
   val id = UInt(Handle.HANDLE_ID_BITS.W)
 
+  def ===(that: HID): Bool = this.id === that.id
   def =/=(that: HID): Bool = !(this.id === that.id)
 
   /** Return true.B if this HID is within the bounds of the handle table,

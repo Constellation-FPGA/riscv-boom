@@ -444,9 +444,15 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   htw.io.req.bits  := walk_hid
   htw.io.htw_enabled := io.htlb_enabled
 
+  /* It does not make sense for the HTW to have a way to invalidate a single
+   * HID. The HTW (as it currently stands) has an HT0->HT1 cache inside of it
+   * and does NOT cache HIDs. So there is no single HID to invalidate in the
+   * HTW. However, if an "invalidate all HIDs" is requested, it makes sense to
+   * invalidate all HT0->HT1 mappings as well, because that is a fairly
+   * "destructive" operation overall. */
   htw.io.inval.valid := io.clear_htlb || (do_htInval && inval_all)
   htw.io.inval.bits.all := io.clear_htlb || (do_htInval && inval_all)
-  htw.io.inval.bits.hid := DontCare // The HTW cannot invalidate a single entry?
+  htw.io.inval.bits.hid := DontCare
 
   cache.io.inval.valid := io.clear_htlb || do_htInval
   cache.io.inval.bits.all := io.clear_htlb || inval_all

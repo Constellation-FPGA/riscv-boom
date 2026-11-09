@@ -99,8 +99,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   private val htwHT0Bits = 12
   private val htwHT1Bits = Handle.HANDLE_ID_BITS - htwHT0Bits
 
-  // Adapted from HTW.scala
-  // We assume twoStageHTW is true for this simplified version with 2-stage
   // TODO: hidHT0 & hidHT1 should instances of custom types.
   private def hidHT0(hid: HID) = hid.id.head(htwHT0Bits)
   private def hidHT1(hid: HID) = hid.id(htwHT1Bits-1, 0)

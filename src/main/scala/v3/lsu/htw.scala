@@ -124,10 +124,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     TaggedCacheEntry(htwHT1Bits, UInt(maxSVAddrBits.W))
   ))
 
-  when (io.inval.valid && io.inval.bits.all) {
-    translation_buffer.foreach(_.invalidate())
-  }
-
   val timeline = new TimelineTracker()
 
   // Memory Request Construction
@@ -381,4 +377,14 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   when(!io.htw_enabled) {
     io.mem.req.valid := false.B
   }
+
+  /* Invalidation
+   *
+   * NOTE: This must come after the FSM switch block to follow Chisel's last
+   * connection rule. */
+  when (io.inval.valid && io.inval.bits.all) {
+    translation_buffer.foreach(_.invalidate())
+  }
+
+
 }

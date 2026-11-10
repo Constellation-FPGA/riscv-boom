@@ -267,10 +267,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           walk_addr := l0_entry.data + (hidL1(walk_hid) * 8.U)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
-            midas.targetutils.SynthesizePrintf(
-              printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x (L0 hit)\n",
-                timeline.cycle, walk_hid.id, walk_addr)
-            )
+            if (boomParams.enableStateTracing) {
+              midas.targetutils.SynthesizePrintf(
+                printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x (L0 hit)\n",
+                  timeline.cycle, walk_hid.id, walk_addr)
+              )
+            }
             next_state := HTWState.s_wait_ht_entry
           }.otherwise {
             next_state := HTWState.s_request_ht_entry
@@ -279,10 +281,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           walk_addr := io.htBase + hidL0(walk_hid) * 8.U
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {
-            midas.targetutils.SynthesizePrintf(
-              printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
-                timeline.cycle, walk_hid.id, walk_addr)
-            )
+            if (boomParams.enableStateTracing) {
+              midas.targetutils.SynthesizePrintf(
+                printf("HTLB.walk.dir: cycle=%d hid=0x%x addr=0x%x\n",
+                  timeline.cycle, walk_hid.id, walk_addr)
+              )
+            }
             next_state := HTWState.s_wait_ht_directory
           }.otherwise {
             next_state := HTWState.s_request_ht_directory
@@ -314,10 +318,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     is(HTWState.s_wait_ht_directory) {
       // Wait for outer walk response
       when(mem_resp_valid) {
-        midas.targetutils.SynthesizePrintf(
-          printf("HTLB.dir_resp: cycle=%d hid=0x%x base=0x%x\n",
-            timeline.cycle, hid_req.id, mem_resp_data)
-        )
+        if (boomParams.enableStateTracing) {
+          midas.targetutils.SynthesizePrintf(
+            printf("HTLB.dir_resp: cycle=%d hid=0x%x base=0x%x\n",
+              timeline.cycle, hid_req.id, mem_resp_data.addr)
+          )
+        }
 
         // Update L0 Cache
         val cache = translation_buffer
@@ -350,10 +356,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
       io.mem.req.valid := true.B
       when(io.mem.req.fire) {
-        midas.targetutils.SynthesizePrintf(
-          printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x\n",
-            timeline.cycle, hid_req.id, walk_addr)
-        )
+        if (boomParams.enableStateTracing) {
+          midas.targetutils.SynthesizePrintf(
+            printf("HTLB.walk.entry: cycle=%d hid=0x%x addr=0x%x\n",
+              timeline.cycle, hid_req.id, walk_addr)
+          )
+        }
         next_state := HTWState.s_wait_ht_entry
       }
     }

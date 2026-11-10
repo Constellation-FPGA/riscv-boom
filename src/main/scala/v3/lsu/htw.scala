@@ -112,11 +112,15 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   require(cfg.idxBits < htwHT0Bits,
     s"[HTW] Translation buffer of ${cfg.cacheSize} entries covers every HT0 index; use < ${1 << htwHT0Bits}")
 
-  // TODO: hidHT0 & hidHT1 should instances of custom types.
+  // Split HID apart into the HT0 and HT1 pieces
   private def hidHT0(hid: HID) = hid.id.head(htwHT0Bits)
   private def hidHT1(hid: HID) = hid.id(htwHT1Bits-1, 0)
+
+  // Produce tuple that is good for working with the translation buffer.
   private def getEntry(hid: HID) = Split(hidHT0(hid), cfg.idxBits)
+  // Tag is the upper bits of HT0
   private def getTag(hid: HID) = getEntry(hid)._1
+  // Index is the lower bits of HT0
   private def getIndex(hid: HID) = getEntry(hid)._2
 
   /* The HTW's translation buffer serves two purposes:
@@ -133,7 +137,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * address as the HTW walks the structure in-memory. Once a handle is fully
    * translated, the translation exits the buffer and is sent elsewhere. */
   private val translation_buffer = RegInit(VecInit.fill(cfg.cacheSize)(
-    TaggedCacheEntry(htwHT1Bits, UInt(maxSVAddrBits.W))
+    TaggedCacheEntry(htwHT0Bits - cfg.idxBits, UInt(maxSVAddrBits.W))
   ))
 
   val timeline = new TimelineTracker()

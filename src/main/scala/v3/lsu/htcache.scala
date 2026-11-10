@@ -18,8 +18,20 @@ case class HTCacheConfig(
   nSets: Int,
   nWays: Int,
 ) {
-  def idxBits = log2Ceil(nSets)
+  // if expression is present to ensure we do not generate 0-width wires and
+  // that we only do valid bit slicing when splitting.
+  def idxBits = if (nSets > 1) log2Ceil(nSets) else 1
   def tagBits = Handle.HANDLE_ID_BITS - idxBits
+
+  require(nSets > 0,
+    "There must be at least one set for the associative HTCache")
+  require(isPow2(nSets),
+    s"The HTCache set size must be a power of 2. You requested $nSets")
+
+  require(nWays > 0,
+    "[HTCache] There must be at least one way for the associative HTCache")
+  require(isPow2(nWays),
+    s"[HTCache] Cache way size must be a power of 2. You requested $nWays")
 }
 
 final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)

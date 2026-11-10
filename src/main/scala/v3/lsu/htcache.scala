@@ -99,9 +99,23 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   /* Hit Logic (per lane)
    * Hits per lane (memWidth), per set, and per way. Produces a true.B when the
-   * HTCache Entry in the specified lane-set-way combination is a hit.
-   * NOTE: This produces a Vec(Vec(Bool))*/
-  val real_hits = LSU.widthMap(memWidth)(w => VecInit(entries(lookup_hid_set(w)).map(io.lookup(w).hid.valid && _.hit(lookup_hid_tag(w)))))
+   * HTCache Entry in the specified lane-set-way combination is a hit. */
+  val real_hits = LSU.widthMap(memWidth)(w => {
+    // Index into entries cache, selecting the set that was requested, and
+    // "return" its ways.
+    val set_ways = entries(lookup_hid_set(w))
+    // Now look inside each way and see if the lookup HID's tag hits in the set.
+    // If hit returns true.B, that way holds that value.
+    // This produces a Vec(nSet, Vec(nWay, Bool)) where there is a Bool for
+    // every set-times-way.
+    val set_hits = VecInit(set_ways.map(io.lookup(w).hid.valid && _.hit(lookup_hid_tag(w))))
+    // Ensure that the lookup logic here did not somehow have multiple hits in
+    // the same set, which should be impossible. There must only be zero or one
+    // hit per set.
+    assert(PopCount(set_hits) <= 1.U,
+      "[htcache] Had more than 1 hit inside a cache set! Impossible!")
+    set_hits
+  })
   val hit_way = LSU.widthMap(memWidth)(w => OHToUInt(real_hits(w).asUInt))
 
   // Update PLRU on a hit and on a fill. real_hits is one-hot, so use OHToUInt

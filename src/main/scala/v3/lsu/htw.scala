@@ -32,8 +32,9 @@ case class HTWConfig(
  * critical for the HTW to function should be placed in this bundle.
  */
 final class HTWPerf extends Bundle {
-  /** Outputs true.B if an incoming handle translation request matches an
-   * already in-flight and not yet completed handle translation request. */
+  /** Outputs true.B if the incoming handle translation request hits in the
+   * [[HTW]]'s translation buffer, which means the htBase -> HT0 step of the
+   * translation is skipped and HT0 -> HT1 translation is done immediately. */
   val ht0_hit_in_s_ready = Output(Bool())
   /** The [[HID]] that is currently being walked/translated by the [[HTW]].
    * The HTW is responsible for holding this at the HID that is currently being

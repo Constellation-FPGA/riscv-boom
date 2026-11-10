@@ -52,11 +52,9 @@ class HTLBExceptions extends Bundle {
  * not a miss.
  */
 class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
-  /** The address that corresponds to the handle given in the request.
-   * This may be a virtual address or a physical address, depending on the
-   * value of [[HTLBResp.phys]].
-   * If it is a virtual address, then it must go through page translation before
-   * the actual-requested memory operation happens.
+  /** The virtual address that corresponds to the handle given in the request.
+   * It must go through page translation before the actual-requested memory
+   * operation happens.
    *
    * NOTE: This field is xLen wide despite returning a virtual address when
    * translating a handle, because this is also how a handle fault returns

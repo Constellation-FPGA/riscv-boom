@@ -418,6 +418,14 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * connection rule. */
   when (io.inval.valid && io.inval.bits.all) {
     translation_buffer.foreach(_.invalidate())
+    /* Invalidating everything in the HTLB only done when switching handle
+     * tables. In that case, we should also reset the HTW to its idle state and
+     * suppress any outgoing fills or memory requests. */
+    state := HTWState.s_ready
+    io.fill.valid := false.B
+    io.mem.req.valid := false.B
+    /* NOTE: Do NOT set io.req.ready to false.B! An invalidation does NOT mean
+     * that the HTW is not ready to receive new translation requests! */
   }
 
 

@@ -13,10 +13,22 @@ import boom.v3.common._
 /** Describes the configuration of an [[HTW]].
  *
  * @param pht_enabled True if the address in the htBase CSR is physical.
+ * @param cacheSize The number of entries in the HTW's HT0->HT1 cache, which
+ *                  also serves as the working space for the HTW.
  */
 case class HTWConfig(
   pht_enabled: Boolean = true,
-)
+  cacheSize: Int = 4,
+) {
+  // if expression is present to ensure we do not generate 0-width wires and
+  // that we only do valid bit slicing when splitting.
+  val idxBits = if (cacheSize > 1) log2Ceil(cacheSize) else 1
+
+  require(cacheSize > 0,
+    s"[HTW] Translation cache/buffer must have at least 1 entry. You requested $cacheSize")
+  require(isPow2(cacheSize),
+    s"[HTW] Translation cache size must be a power of 2. You requested $cacheSize")
+}
 
 /** Side-band information about the performance of the HTW's internals.
  *
@@ -95,14 +107,19 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.perf.ht0_hit_in_s_ready := false.B
 
   /* The zeroth level is indexed by the top 12 bits of a handle ID and the
-   * first level is indexed by the remaining bits (18 bits in this case). */
+   * first level is indexed by the remaining bits (18 bits in this case).
+   *
+   * This could move to HTWConfig in the future, if we want to be able to
+   * more closely configure the HTW. */
   private val htwHT0Bits = 12
   private val htwHT1Bits = Handle.HANDLE_ID_BITS - htwHT0Bits
+  require(cfg.idxBits < htwHT0Bits,
+    s"[HTW] Translation buffer of ${cfg.cacheSize} entries covers every HT0 index; use < ${1 << htwHT0Bits}")
 
   // TODO: hidHT0 & hidHT1 should instances of custom types.
   private def hidHT0(hid: HID) = hid.id.head(htwHT0Bits)
   private def hidHT1(hid: HID) = hid.id(htwHT1Bits-1, 0)
-  private def getEntry(hid: HID) = Split(hidHT0(hid), log2Ceil(boomParams.HTWCacheSize))
+  private def getEntry(hid: HID) = Split(hidHT0(hid), cfg.idxBits)
   private def getTag(hid: HID) = getEntry(hid)._1
   private def getIndex(hid: HID) = getEntry(hid)._2
 
@@ -119,7 +136,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * The HTW uses this translation buffer to build up a handle's translated
    * address as the HTW walks the structure in-memory. Once a handle is fully
    * translated, the translation exits the buffer and is sent elsewhere. */
-  private val translation_buffer = RegInit(VecInit.fill(boomParams.HTWCacheSize)(
+  private val translation_buffer = RegInit(VecInit.fill(cfg.cacheSize)(
     TaggedCacheEntry(htwHT1Bits, UInt(maxSVAddrBits.W))
   ))
 

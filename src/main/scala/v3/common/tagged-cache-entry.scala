@@ -28,8 +28,8 @@ class TaggedCacheEntry[T <: Data](tagBits: Int, gen: T) extends Bundle {
 
   def invalidate(): Unit = {
     valid := false.B
-    tag := DontCare
-    data := DontCare
+    tag := 0.U
+    data := 0.U.asTypeOf(gen)
   }
 }
 

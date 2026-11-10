@@ -490,16 +490,14 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   io.perf.walk_lane  := walk_lane
 
   locally {
-    val fill = htw.io.fill.valid
-    // The HID being walked. HTW holds it on its input fill line for the duration of the walk?
-    // FIXME: Validate the assumption above is true!
-    val hid_req = htw.io.fill.bits.hid
+    val hid_translating = htw.io.perf.walking_hid.valid
+    val hid_req = htw.io.perf.walking_hid.bits
 
     // Misses in the cycle a walk starts that did not start it (a lower lane did).
     val miss_walker_taken = LSU.widthMap(memWidth)(w => lane_miss(w) && walk_start && walk_lane =/= w.U)
     val miss_busy = LSU.widthMap(memWidth)(w => lane_miss(w) && !htw.io.req.ready)
-    midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => miss_busy(w) && hids(w) === hid_req)), "htlb_miss_busy_same", "htlb_miss_busy_same")
-    midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => miss_busy(w) && hids(w) =/= hid_req)), "htlb_miss_busy_other", "htlb_miss_busy_other")
+    midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => miss_busy(w) && hid_translating && hids(w) === hid_req)), "htlb_miss_busy_same", "htlb_miss_busy_same")
+    midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => miss_busy(w) && hid_translating && hids(w) =/= hid_req)), "htlb_miss_busy_other", "htlb_miss_busy_other")
     midas.targetutils.PerfCounter(PopCount(miss_walker_taken), "htlb_miss_walker_taken", "htlb_miss_walker_taken")
 
     // Collect walk performance numbers
@@ -510,7 +508,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     }.elsewhen(!htw.io.req.ready && walk_cycles =/= ~0.U(16.W)) {
       walk_cycles := walk_cycles + 1.U
     }
-    when(fill && walk_cycles > walk_max) { walk_max := walk_cycles }
+    when(hid_translating && walk_cycles > walk_max) { walk_max := walk_cycles }
 
     midas.targetutils.PerfCounter(walk_start, "htlb_walk_start", "htlb_walk_start")
     midas.targetutils.PerfCounter.identity(walk_max, "htlb_walk_lat_max", "htlb_walk_lat_max")

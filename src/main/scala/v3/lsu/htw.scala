@@ -35,6 +35,10 @@ final class HTWPerf extends Bundle {
   /** Outputs true.B if an incoming handle translation request matches an
    * already in-flight and not yet completed handle translation request. */
   val ht0_hit_in_s_ready = Output(Bool())
+  /** The [[HID]] that is currently being walked/translated by the [[HTW]].
+   * The HTW is responsible for holding this at the HID that is currently being
+   * translated while the valid line is high.*/
+  val walking_hid = Output(Valid(new HID()))
 }
 
 final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
@@ -200,6 +204,13 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   private val next_state = WireDefault(state)
 
   state := Mux(io.htw_enabled, next_state, HTWState.s_ready)
+
+  /* This HTW implementation can only accept, work with, translate, and return
+   * one handle at a time, so the single register that holds onto the HID is
+   * only valid when the request comes in and the hid_req register is holding
+   * something. The HTW is only walking when it is not in the ready state. */
+  io.perf.walking_hid.valid := state =/= HTWState.s_ready
+  io.perf.walking_hid.bits  := hid_req
 
   // Raised to true.B when the currently in-flight handle finishes translation.
   private val translation_done = state === HTWState.s_wait_ht1 && mem_resp_valid

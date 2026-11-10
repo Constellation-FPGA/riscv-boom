@@ -420,7 +420,10 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       !hm_enabled(w),
       effectiveAddress(io.req(w).bits.haddr),
       Mux(!io.resp(w).miss,
-        translatedHandle.addr + io.req(w).bits.haddr.offset.asUInt,
+        // Be explicit about the width & zero extension that happens here.
+        // io.resp(w).addr is xLen wide, but translatedHandle.addr is
+        // maxSVAddrBits=39 and haddr.offset.asUInt is 32 bits.
+        translatedHandle.addr.pad(xLen) + io.req(w).bits.haddr.offset.asUInt.pad(xLen),
         0.U
       )
     )

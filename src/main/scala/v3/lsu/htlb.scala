@@ -357,11 +357,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // The lookup and the walker serve lane 0 only.
   require(memWidth == 1, s"YukonHTLB supports memWidth == 1 only, not $memWidth")
 
-  for (w <- 0 until memWidth) {
-    io.resp(w).handle_fault.ld := false.B
-    io.resp(w).handle_fault.st := false.B
-  }
-
   /* The HTW & HTCache are in the same clock and reset domain as the HTLB.
    * This means that both modules' internal storage will be reset at the same
    * time as the outer YukonHTLB. So we do not need any special logic for
@@ -378,6 +373,8 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   io.perf.fill := htw.io.fill.valid
 
+  /* The YukonHTLB is meant to provide hardware translation, but NOT provide
+  * handle faults. So tie off the handle fault lines to false.B. */
   for (w <- 0 until memWidth) {
     io.resp(w).handle_fault.ld := false.B
     io.resp(w).handle_fault.st := false.B

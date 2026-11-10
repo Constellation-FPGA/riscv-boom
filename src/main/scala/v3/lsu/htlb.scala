@@ -384,7 +384,6 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   }
 
   val htCache_hit = LSU.widthMap(memWidth)(w => cache.io.lookup(w).hit)
-  val htCache_way = LSU.widthMap(memWidth)(w => cache.io.lookup(w).way)
 
   val hm_enabled = LSU.widthMap(memWidth)(w => !io.req(w).bits.passthrough)
   val hids = LSU.widthMap(memWidth)(w => io.req(w).bits.haddr.hid)

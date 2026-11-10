@@ -161,6 +161,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.mem.req.bits.idx.foreach(_ := walk_addr)
   io.mem.req.bits.dprv := rocket.PRV.S.U
   io.mem.req.bits.dv := false.B
+  // The HTLB and therefore the HTW is only enabled when dprv === PRV.U.
+  // This means that every processor trap aborts an in-flight walk and a stale
+  // response is not taken as the next walk's data.
+  // TODO: Talk with NCW and determine if this is intentional/desirable?
   io.mem.req.bits.tag := DontCare
   io.mem.req.bits.no_resp := false.B
   io.mem.req.bits.no_alloc := DontCare
@@ -179,6 +183,11 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   //      io.mem.resp.valid → io.mem.req.valid that exists in s_wait_ht0.
   //      Without this register, MIDAS's token model deadlocks at cycle 3.
   //      The 1-cycle delay is acceptable given the multi-cycle cache latency.
+  /* The LSU's Hella FSM only allows one outstanding request. The h_wait to
+   * h_ready transition takes one cycle, which is what lines up with this
+   * here. This happens because the HTW only issues requests with dprv = PRV.U,
+   * which has every trap abort in-flight walks. This also prevents stale
+   * responses from being used as the next walk's data. */
   val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
   // "Typecast" the UInt(64.W) from the HellaCacheResp to a form we prefer.
   val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new XLateResp)

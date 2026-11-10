@@ -6,7 +6,6 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.rocket
 import freechips.rocketchip.rocket.HellaCacheIO
-import freechips.rocketchip.util.Split
 
 import boom.v3.common._
 

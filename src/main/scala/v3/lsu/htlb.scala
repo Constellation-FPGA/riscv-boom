@@ -430,12 +430,15 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // Invalidation
 
   // htInval is a CSR that software writes to request an invalidation.
-  // The CSR clears itself when hrInvald asserts, so we don't need pulse logic.
-  val do_htInval = htw.io.req.ready && !io.htInval.hidZero()
-  val inval_all  = io.htInval === HID(Fill(Handle.HANDLE_ID_BITS, 1.B))
+  // The CSR clears itself when htInvald asserts, so we don't need pulse logic.
+  val inval_one = htw.io.req.ready && !io.htInval.hidZero()
+  val inval_all = inval_one && io.htInval === HID(Fill(Handle.HANDLE_ID_BITS, 1.B))
+  // TODO: Re-add this assertion and make it work!
+  // assert(!(inval_one && inval_all),
+  //   "[yukonhtlb] Cannot invalidate a single handle and all handles at same time")
 
   // Prioritize invalidation over handling a miss.
-  htw.io.req.valid := any_miss && !do_htInval
+  htw.io.req.valid := any_miss && !inval_one
   htw.io.req.bits  := walk_hid
   htw.io.htw_enabled := io.htlb_enabled
 
@@ -445,16 +448,15 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
    * HTW. However, if an "invalidate all HIDs" is requested, it makes sense to
    * invalidate all HT0->HT1 mappings as well, because that is a fairly
    * "destructive" operation overall. */
-  htw.io.inval.valid := io.clear_htlb || (do_htInval && inval_all)
-  htw.io.inval.bits.all := io.clear_htlb || (do_htInval && inval_all)
-  htw.io.inval.bits.hid := DontCare
+  htw.io.inval.valid := io.clear_htlb || inval_all
+  htw.io.inval.bits.all := io.clear_htlb || inval_all
+  htw.io.inval.bits.hid := DontCare // HTW does not cache HIDs
 
-  cache.io.inval.valid := io.clear_htlb || do_htInval
+  cache.io.inval.valid := io.clear_htlb || inval_one || inval_all
   cache.io.inval.bits.all := io.clear_htlb || inval_all
-  // cache.io.inval.bits.all := io.clear_htlb && inval_all
   cache.io.inval.bits.hid := io.htInval
 
-  io.htInvald := do_htInval
+  io.htInvald := inval_one || inval_all
 
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------
@@ -471,19 +473,19 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     )
   }
 
-  when(do_htInval) {
+  when(inval_one) {
     midas.targetutils.SynthesizePrintf(
       printf("HTLB.htInval: cycle=%d hid=0x%x\n", timeline.cycle, io.htInval.asUInt)
     )
   }
 
   midas.targetutils.PerfCounter(io.clear_htlb, "htlb_clear", "htlb_clear")
-  midas.targetutils.PerfCounter(do_htInval && !inval_all, "htlb_inval_one", "htlb_inval_one")
-  midas.targetutils.PerfCounter(do_htInval && inval_all, "htlb_inval_all", "htlb_inval_all")
+  midas.targetutils.PerfCounter(inval_one && !inval_all, "htlb_inval_one", "htlb_inval_one")
+  midas.targetutils.PerfCounter(inval_all, "htlb_inval_all", "htlb_inval_all")
   midas.targetutils.PerfCounter(!io.htInval.hidZero() && !htw.io.req.ready,
     "htlb_inval_wait", "htlb_inval_wait")
 
-  val walk_start = htw.io.req.ready && io.htlb_enabled && !do_htInval && any_miss
+  val walk_start = htw.io.req.ready && io.htlb_enabled && !inval_one && any_miss
 
   io.perf.walk_start := walk_start
   io.perf.walk_lane  := walk_lane

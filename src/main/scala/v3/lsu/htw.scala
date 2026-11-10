@@ -253,8 +253,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
           val ht0_idx = getIndex(walk_hid)
           translation_buffer(ht0_idx)
         }
-        val ht0_tag = getTag(walk_hid)
-        val ht0_hit = ht0_entry.valid && ht0_entry.tag === ht0_tag
+        val ht0_hit = ht0_entry.hit(getTag(walk_hid))
 
         when(ht0_hit) {
           io.perf.ht0_hit_in_s_ready := true.B
@@ -326,9 +325,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
          * memory about the translation so far, adding the HT0->HT1 mapping to
          * the translation buffer for later potential use. */
         val fill_idx = getIndex(hid_req)
-        translation_buffer(fill_idx).valid := true.B
-        translation_buffer(fill_idx).tag := getTag(hid_req)
-        translation_buffer(fill_idx).data := mem_resp_data.addr
+        translation_buffer(fill_idx).insert(getTag(hid_req), mem_resp_data.addr)
 
         /* NOTE: This is is a "fast path" optimization. If the HTW gets a
          * response for the HT0 request, the HTW will attempt to send out a

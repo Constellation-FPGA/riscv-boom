@@ -71,7 +71,7 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
  *
  * NOTE: This bundle does NOT track any information about which handle
  * was translated to produce the contained results. */
-final class TranslatedHandle(implicit p: Parameters)
+class TranslatedHandle(implicit p: Parameters)
   extends BoomBundle()(p) {
   /** The address a handle was translated to. */
   val addr = UInt(maxSVAddrBits.W)
@@ -87,12 +87,18 @@ final object TranslatedHandle {
   }
 }
 
-/** A fully translated handle. Tracks the handle HID that was translated and the
- * virtual address that it maps too. */
+/** A fully translated handle. Tracks the handle HID that was translated, the
+ * virtual address that it maps to, and if the handle translation was
+ * exceptional (producing a handle fault).
+ * The translation field will only contain a valid [[TranslatedHandle]] if the
+ * exception flag is `false.B`. */
 final class HandleTranslation(implicit p: Parameters)
   extends BoomBundle()(p) {
   /** The HID that should fill (be inserted into) the handle cache. */
   val hid = new HID()
+  /** Was this handle translation "faulty", producing a handle fault?
+   * If this is true.B, then the translation field is invalid. */
+  val fault = Bool()
   /** The address this translated handle maps to. */
   val xlation = new TranslatedHandle()
 }
@@ -369,19 +375,24 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   io.miss_rdy := htw.io.req.ready
   cache.io.fill := htw.io.fill
 
-  io.perf.fill := htw.io.fill.valid
-
-  /* The YukonHTLB is meant to provide hardware translation, but NOT provide
-  * handle faults. So tie off the handle fault lines to false.B. */
-  for (w <- 0 until memWidth) {
-    io.resp(w).handle_fault.ld := false.B
-    io.resp(w).handle_fault.st := false.B
-  }
+  io.perf.fill := htw.io.fill.valid && !htw.io.fill.bits.fault
 
   val hids = LSU.widthMap(memWidth)(w => io.req(w).bits.haddr.hid)
 
+  /* The Yukon HTLB experiencing a miss means that the incoming translation
+  * request is not already in the HTCache and must be queued up for
+  * translation. The LSU then sees the miss and tries to issue something else
+  * in the next clock cycle. Meanwhile, in parallel, the HTW is walking the
+  * handle table in-memory and will eventually finish the translation. At that
+  * point, it is fed to the HTCache. Eventually, the LSU will reissue/retry the
+  * translation that missed. And this time, it will hit in the HTCache and be
+  * returned.
+  *
+  * Remember that the HTCache "hits" for handle faults too! So we must
+  * distinguish between lookup hits from actual misses and handle faults. */
   val htlb_miss = LSU.widthMap(memWidth)(w => {
-    io.req(w).valid && !io.req(w).bits.passthrough && !cache.io.lookup(w).hit
+    io.req(w).valid && !io.req(w).bits.passthrough &&
+    !cache.io.lookup(w).hit && !cache.io.lookup(w).handle_fault
   })
 
   for (w <- 0 until memWidth) {
@@ -401,8 +412,12 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
   midas.targetutils.PerfCounter(PopCount(
     LSU.widthMap(memWidth)(w => {
-      io.req(w).fire && !io.req(w).bits.passthrough && cache.io.lookup(w).hit
-  })), "htlb_hit", "htlb_hit")
+      io.req(w).fire && !io.req(w).bits.passthrough && cache.io.lookup(w).hit && cache.io.lookup(w).handle_fault
+  })), "htlb_fault_hit", "htlb_fault_hit")
+  midas.targetutils.PerfCounter(PopCount(
+    LSU.widthMap(memWidth)(w => {
+      io.req(w).fire && !io.req(w).bits.passthrough && cache.io.lookup(w).hit && !cache.io.lookup(w).handle_fault
+  })), "htlb_good_hit", "htlb_good_hit")
   midas.targetutils.PerfCounter(any_miss && htw.io.perf.ht0_hit_in_s_ready, "htlb_ht0_hit", "htlb_ht0_hit")
 
   // ------------------------------------------------------------------------------------------------
@@ -412,20 +427,25 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // ------------------------------------------------------------------------------------------------
 
   for (w <- 0 until memWidth) {
+    val faulted = resp_for_handle(w) && cache.io.lookup(w).hit && cache.io.lookup(w).handle_fault
     val translatedHandle: TranslatedHandle = cache.io.lookup(w).data
 
     io.req(w).ready := true.B
     io.resp(w).miss := htlb_miss(w)
-    io.resp(w).addr := Mux(
-      io.req(w).bits.passthrough,
-      effectiveAddress(io.req(w).bits.haddr),
-      Mux(!io.resp(w).miss,
-        // Be explicit about the width & zero extension that happens here.
-        // io.resp(w).addr is xLen wide, but translatedHandle.addr is
-        // maxSVAddrBits=39 and haddr.offset.asUInt is 32 bits.
-        translatedHandle.addr.pad(xLen) + io.req(w).bits.haddr.offset.asUInt.pad(xLen),
-        0.U
-      )
+
+    io.resp(w).handle_fault.ld := faulted && rocket.isRead(io.req(w).bits.cmd)
+    io.resp(w).handle_fault.st := faulted && rocket.isWrite(io.req(w).bits.cmd)
+
+    io.resp(w).addr := Mux(resp_for_handle(w),
+      Mux(!htlb_miss(w),
+        Mux(faulted,
+          handle_fault_haddr_resp(io.req(w).bits.haddr, io.req(w).bits.cmd),
+          // Be explicit about the width & zero extension that happens here.
+          // io.resp(w).addr is xLen wide, but translatedHandle.addr is
+          // maxSVAddrBits=39 and haddr.offset.asUInt is 32 bits.
+          translatedHandle.addr.pad(xLen) + io.req(w).bits.haddr.offset.asUInt.pad(xLen)),
+        0.U),
+      effectiveAddress(io.req(w).bits.haddr)
     )
   }
 

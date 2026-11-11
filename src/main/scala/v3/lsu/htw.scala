@@ -224,7 +224,8 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.perf.walking_hid.bits  := hid_req
 
   // Raised to true.B when the currently in-flight handle finishes translation.
-  private val translation_done = state === HTWState.s_wait_ht1 && mem_resp_valid
+  private val translation_done = WireInit(false.B)
+  // NOTE: WireInit's apply() method does the := false.B assignment for us.
 
   timeline.trackState("htlb.state", "mem_req", io.mem.req.valid)
   timeline.trackState("htlb.state", "mem_resp", io.mem.resp.valid)
@@ -259,6 +260,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.fill.valid := translation_done
   io.fill.bits.hid := hid_req
   io.fill.bits.xlation := TranslatedHandle(mem_resp_data.addr)
+  io.fill.bits.fault := false.B
 
   switch(state) {
     is(HTWState.s_ready) {
@@ -368,7 +370,13 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
       }.elsewhen(io.mem.s2_nack) {
         next_state := HTWState.s_request_ht0
       }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
-        next_state := HTWState.s_request_ht0
+        translation_done := true.B
+        /* HellaCache gave us an exception! Raise a handle fault! */
+        io.fill.bits.fault := true.B
+        io.fill.bits.xlation := TranslatedHandle(0.U(maxSVAddrBits.W))
+        // Return the HTW to the ready state to potentially accept another
+        // translation.
+        next_state := HTWState.s_ready
       }
     }
 
@@ -395,10 +403,17 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         // The response is taken and passed to the HTCache through the io.fill
         // bundle.
         next_state := HTWState.s_ready
+        translation_done := true.B
       }.elsewhen(io.mem.s2_nack) {
         next_state := HTWState.s_request_ht1
       }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
-        next_state := HTWState.s_request_ht1
+        translation_done := true.B
+        /* HellaCache gave us an exception! Raise a handle fault! */
+        io.fill.bits.fault := true.B
+        io.fill.bits.xlation := TranslatedHandle(0.U(maxSVAddrBits.W))
+        // Return the HTW to the ready state to potentially accept another
+        // translation.
+        next_state := HTWState.s_ready
       }
     }
   }

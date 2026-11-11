@@ -40,6 +40,13 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
     val hid = Input(Valid(new HID()))
     /** Did the lookup request hit in the cache? */
     val hit = Output(Bool())
+    /** Is the HID looked-up actually a handle fault?
+     *
+     * If the handle fault was raised by the [[HTW]] and is stored in the
+     * [[HTCache]], when/if software fixes up the handle table, software
+     * must also manually invalidate the old HID before attempting to
+     * translate that newly-fixed HID again.*/
+    val handle_fault = Output(Bool())
     /** The way that had a hit. Meaningless when [[hit]] is false.B. */
     val way = Output(UInt(log2Ceil(cfg.nWays).W))
     /** The hit entry's data. Meaningless when [[hit]] is false.B. */
@@ -67,6 +74,18 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
 final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
 
+  private final class HTCacheEntry extends TranslatedHandle {
+    val fault = Bool()
+  }
+  private object HTCacheEntry {
+    def apply(xlate: TranslatedHandle, fault: Bool) = {
+      val e = Wire(new HTCacheEntry)
+      e.addr  := xlate.addr
+      e.fault := fault
+      e
+    }
+  }
+
   val io = IO(new HTCacheIO(cfg))
 
   /* NOTE: RegInit is important so that reset signals actually reset the cache
@@ -75,8 +94,8 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
    * XXX: entries is shared between ALL lanes (memWidth)! This will be
    * problematic if the memWidth grows too high because we will end up making
    * a very high-port count memory block! */
-  val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(
-    TaggedCacheEntry(cfg.tagBits, new TranslatedHandle())
+  private val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(
+    TaggedCacheEntry(cfg.tagBits, new HTCacheEntry())
   ))
 
   /* The SetAssocLRU does not handle conditions where nWays <= 1, because it
@@ -117,7 +136,10 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   /* Hit Logic (per lane)
    * Hits per lane (memWidth), per set, and per way. Produces a true.B when the
-   * HTCache Entry in the specified lane-set-way combination is a hit. */
+   * HTCache Entry in the specified lane-set-way combination is a hit.
+   *
+   * Remember that a handle translation that failed in the HTW is kept in the
+   * HTCache as a valid translation that is marked as a handle fault. */
   val real_hits = LSU.widthMap(memWidth)(w => {
     // Index into entries cache, selecting the set that was requested, and
     // "return" its ways.
@@ -150,6 +172,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     io.lookup(w).hit  := this_lane_hit
     io.lookup(w).way  := hit_way(w)
     io.lookup(w).data := entries(lookup_hid_set(w))(hit_way(w)).data
+    io.lookup(w).handle_fault := entries(lookup_hid_set(w))(hit_way(w)).data.fault
 
     /* Mark an entry in the handle cached as "used" when there was a request
      * has a hit.
@@ -162,7 +185,7 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
 
   /* Insert the handle's translation into the HTCache. */
   when(io.fill.valid) {
-    val translation = io.fill.bits.xlation
+    val translation = HTCacheEntry(io.fill.bits.xlation, io.fill.bits.fault)
     // No victim handling needed, just overwrite
     entries(r_idx)(repl_way).insert(r_tag, translation)
 
@@ -182,7 +205,8 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
     entries.foreach(set => set.foreach(way => way.invalidate()))
   }
 
-  midas.targetutils.PerfCounter(io.fill.valid, "htlb_fill", "htlb_fill")
+  midas.targetutils.PerfCounter(io.fill.valid && !io.fill.bits.fault, "htlb_good_fill", "htlb_good_fill")
+  midas.targetutils.PerfCounter(io.fill.valid && io.fill.bits.fault, "htlb_fault_fill", "htlb_fault_fill")
   midas.targetutils.PerfCounter(io.fill.valid && entries(r_idx)(repl_way).valid,
     "htlb_evict_valid", "htlb_evict_valid")
   midas.targetutils.PerfCounter(io.fill.valid && entries(r_idx)(repl_way).valid && !used(r_idx)(repl_way),

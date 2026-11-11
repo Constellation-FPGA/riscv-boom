@@ -153,6 +153,41 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     Cat(ea_sign, sum(vaddrBits - 1, 0)).asUInt
   }
 
+  /** Is this response for a handle request? */
+  protected val resp_for_handle = LSU.widthMap(memWidth)(w => {
+    io.htlb_enabled && io.req(w).valid && io.req(w).bits.haddr.isHandle() && !io.req(w).bits.passthrough
+  })
+
+  // These are bit patterns, not UInts, but this is the easiest way to make
+  // the type system happy right now.
+  private val HANDLE_FAULT_LD = "b00".U
+  private val HANDLE_FAULT_ST = "b01".U
+  protected def handle_fault_haddr_resp(handle: Handle, cmd: UInt) = {
+    require(cmd.getWidth == rocket.M_SZ,
+      "Memory command is wrong width to build handle fault response addr for xTVAL CSR")
+
+    val haddr = handle.asUInt
+
+    val fault_haddr = WireInit(0.U(xLen.W))
+    // TODO: All commented-out code blocks in here can be re-enabled when
+    // there is a boolean controlling if we should even be generating a
+    // response, i.e., the resp_for_handle boolean would be passed into here.
+    //
+    // The ## and Cat methods are the same here. KGH just wanted documentation
+    // on 2 ways to achieve the same thing until this gets unified behind some
+    // kind of useful abstraction.
+    when (rocket.isRead(cmd)) {
+      fault_haddr := HANDLE_FAULT_LD ## haddr.tail(2)
+    } .elsewhen (rocket.isWrite(cmd)) {
+      fault_haddr := Cat(HANDLE_FAULT_ST, haddr(61, 0))
+    }//  .otherwise {
+      //   assert(false.B, "Handle command was NEITHER load nor store!")
+      // }
+    require(fault_haddr.getWidth == 64, "Modified faulting haddr must be xLen wide")
+    // assert(fault_haddr =/= 0.U, "Impossible handle fault on address 0x0")
+    fault_haddr
+  }
+
   assert(implies(io.mem.req.valid,
                  (io.mem.req.bits.addr & ((1.U << io.mem.req.bits.size)) - 1.U) === 0.U),
     "[htlb] HellaCache request from HTLB is misaligned!")
@@ -169,17 +204,13 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   /* Requirements on HTLB responses for the given handle translation request. */
   for (w <- 0 until memWidth) {
-    /* Is this response for a handle request? */
-    val resp_for_handle = io.htlb_enabled && io.req(w).valid &&
-      io.req(w).bits.haddr.isHandle() && !io.req(w).bits.passthrough
-
     /* A handle translation request for something that does not "look like" a
      * handle or is marked as passthrough must NEVER miss. */
-    assert(implies(!resp_for_handle, !io.resp(w).miss),
+    assert(implies(!resp_for_handle(w), !io.resp(w).miss),
       "[htlb] Non-handle request must response as a \"miss\"")
 
     /* Only translation requests for handles can produce handle faults. */
-    assert(implies(!resp_for_handle,
+    assert(implies(!resp_for_handle(w),
                    !io.resp(w).handle_fault.ld && !io.resp(w).handle_fault.st),
       "[htlb] Only translations requests for handles can produce handle faults")
   }
@@ -247,10 +278,6 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val cmd_read  = rocket.isRead(req.bits.cmd)
     val cmd_write = rocket.isWrite(req.bits.cmd)
 
-    /* Is this response for a handle request? */
-    val resp_for_handle = io.htlb_enabled && req.valid &&
-      req.bits.haddr.isHandle() && !req.bits.passthrough
-
     /* Despite this module always returning a handle fault, a handle fault is
      * NOT a miss! A miss means that the handle was valid, but that the HTLB
      * has not previously (up to replacement policies) seen that handle and
@@ -263,42 +290,16 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
      * the virtual address. */
     io.resp(w).miss := false.B
 
-    // These are bit patterns, not UInts, but this is the easiest way to make
-    // the type system happy right now.
-    val HANDLE_FAULT_LD = "b00".U
-    val HANDLE_FAULT_ST = "b01".U
-    def handle_fault_haddr_resp(handle: Handle): UInt = {
-      val haddr = handle.asUInt
-      val fault_haddr = WireInit(0.U(xLen.W))
-      // TODO: All commented-out code blocks in here can be re-enabled when
-      // there is a boolean controlling if we should even be generating a
-      // response, i.e., the resp_for_handle boolean would be passed into here.
-      //
-      // The ## and Cat methods are the same here. KGH just wanted documentation
-      // on 2 ways to achieve the same thing until this gets unified behind some
-      // kind of useful abstraction.
-      when (cmd_read) {
-        fault_haddr := HANDLE_FAULT_LD ## haddr.tail(2)
-      } .elsewhen (cmd_write) {
-        fault_haddr := Cat(HANDLE_FAULT_ST, haddr(61, 0))
-      }//  .otherwise {
-      //   assert(false.B, "Handle command was NEITHER load nor store!")
-      // }
-      require(fault_haddr.getWidth == 64, "Modified faulting haddr must be xLen wide")
-      // assert(fault_haddr =/= 0.U, "Impossible handle fault on address 0x0")
-      fault_haddr
-    }
-
-    io.resp(w).addr := Mux(resp_for_handle,
-      handle_fault_haddr_resp(req.bits.haddr),
+    io.resp(w).addr := Mux(resp_for_handle(w),
+      handle_fault_haddr_resp(req.bits.haddr, req.bits.cmd),
       effectiveAddress(io.req(w).bits.haddr))
 
     /* NOTE: If a handle is marked as writable, then this block of hardware
      * will also IMPLICITLY treat it as readable.
      * This is generally the idea, because what good is a handle structure
      * that you can write to that you cannot read from? */
-    io.resp(w).handle_fault.ld := resp_for_handle && cmd_read  && (!present || !r_perm)
-    io.resp(w).handle_fault.st := resp_for_handle && cmd_write && (!present || !w_perm)
+    io.resp(w).handle_fault.ld := resp_for_handle(w) && cmd_read  && (!present || !r_perm)
+    io.resp(w).handle_fault.st := resp_for_handle(w) && cmd_write && (!present || !w_perm)
   }
 }
 

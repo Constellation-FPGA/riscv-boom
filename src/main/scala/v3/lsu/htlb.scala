@@ -487,13 +487,13 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   midas.targetutils.PerfCounter(!io.htInval.hidZero() && !htw.io.req.ready,
     "htlb_inval_wait", "htlb_inval_wait")
 
-  val walk_start = htw.io.req.ready && io.htlb_enabled && !inval_one && any_miss
+  val walk_start = htw.io.req.ready && io.htlb_enabled && !io.clear_htlb && !inval_one && any_miss
 
   io.perf.walk_start := walk_start
   io.perf.walk_lane  := walk_lane
 
   locally {
-    val hid_translating = htw.io.perf.walking_hid.valid
+    val hid_translating = htw.io.perf.walking_hid.valid && !io.clear_htlb
     val hid_req = htw.io.perf.walking_hid.bits
 
     // Misses in the cycle a walk starts that did not start it (a lower lane did).

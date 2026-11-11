@@ -67,7 +67,7 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
   val handle_fault = new HTLBExceptions
 }
 
-/** Class to represented the result of translating an Alaska handle.
+/** Class to represent the result of translating an Alaska handle.
  *
  * NOTE: This bundle does NOT track any information about which handle
  * was translated to produce the contained results. */

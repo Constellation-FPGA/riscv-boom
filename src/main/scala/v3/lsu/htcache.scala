@@ -91,8 +91,10 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   /* "used" is set on a hit and cleared on a fill. */
   val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
 
+  /* Split incoming cache fill command into cache tag & index/set. */
   val (r_tag, r_idx) = HTLBUtils.hidSplit(io.fill.bits.hid, cfg.idxBits)
 
+  /* Split the incoming lookup requests into tag & set for cache lookups. */
   val lookup_hid_tag = io.lookup.map(l => {
     HTLBUtils.hidSplit(l.hid.bits, cfg.idxBits)._1
   })

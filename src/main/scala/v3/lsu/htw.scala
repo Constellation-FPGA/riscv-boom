@@ -140,7 +140,8 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    *
    * The HTW uses this translation buffer to build up a handle's translated
    * address as the HTW walks the structure in-memory. Once a handle is fully
-   * translated, the translation exits the buffer and is sent elsewhere. */
+   * translated, the translation is complete and sent elsewhere while the
+   * HT0->HT1 mapping is cached in this buffer. */
   private val translation_buffer = RegInit(VecInit.fill(cfg.cacheSize)(
     TaggedCacheEntry(htwHT0Bits - cfg.idxBits, UInt(maxSVAddrBits.W))
   ))
@@ -161,10 +162,6 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.mem.req.bits.idx.foreach(_ := walk_addr)
   io.mem.req.bits.dprv := rocket.PRV.S.U
   io.mem.req.bits.dv := false.B
-  // The HTLB and therefore the HTW is only enabled when dprv === PRV.U.
-  // This means that every processor trap aborts an in-flight walk and a stale
-  // response is not taken as the next walk's data.
-  // TODO: Talk with NCW and determine if this is intentional/desirable?
   io.mem.req.bits.tag := DontCare
   io.mem.req.bits.no_resp := false.B
   io.mem.req.bits.no_alloc := DontCare
@@ -185,9 +182,13 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   //      The 1-cycle delay is acceptable given the multi-cycle cache latency.
   /* The LSU's Hella FSM only allows one outstanding request. The h_wait to
    * h_ready transition takes one cycle, which is what lines up with this
-   * here. This happens because the HTW only issues requests with dprv = PRV.U,
-   * which has every trap abort in-flight walks. This also prevents stale
-   * responses from being used as the next walk's data. */
+   * here. This happens because the HTW only issues requests with dprv = PRV.S,
+   * which has every trap abort in-flight walks. The Hella FSM only allows one
+   * outstanding request, so together with the RegNext, a new walk's
+   * s_wait_{ht0,ht1} state never sees an old response.
+   *
+   * The HTLB (and therefore the HTW) is disabled when the core is not
+   * in PRV.U, which aborts in-flight walks too. */
   val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
   // "Typecast" the UInt(64.W) from the HellaCacheResp to a form we prefer.
   val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new XLateResp)

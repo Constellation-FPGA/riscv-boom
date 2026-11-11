@@ -378,17 +378,14 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     io.resp(w).handle_fault.st := false.B
   }
 
-  val htCache_hit = LSU.widthMap(memWidth)(w => cache.io.lookup(w).hit)
-
-  val hm_enabled = LSU.widthMap(memWidth)(w => !io.req(w).bits.passthrough)
   val hids = LSU.widthMap(memWidth)(w => io.req(w).bits.haddr.hid)
 
   val htlb_miss = LSU.widthMap(memWidth)(w => {
-    io.req(w).valid && hm_enabled(w) && !htCache_hit(w)
+    io.req(w).valid && !io.req(w).bits.passthrough && !cache.io.lookup(w).hit
   })
 
   for (w <- 0 until memWidth) {
-    cache.io.lookup(w).hid.valid := io.req(w).valid && hm_enabled(w)
+    cache.io.lookup(w).hid.valid := io.req(w).valid && !io.req(w).bits.passthrough
     cache.io.lookup(w).hid.bits  := hids(w)
   }
 
@@ -402,7 +399,10 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   val walk_hid  = hids(walk_lane)
 
   midas.targetutils.PerfCounter(PopCount(lane_miss), "htlb_miss", "htlb_miss")
-  midas.targetutils.PerfCounter(PopCount(LSU.widthMap(memWidth)(w => io.req(w).fire && htCache_hit(w) && hm_enabled(w))), "htlb_hit", "htlb_hit")
+  midas.targetutils.PerfCounter(PopCount(
+    LSU.widthMap(memWidth)(w => {
+      io.req(w).fire && !io.req(w).bits.passthrough && cache.io.lookup(w).hit
+  })), "htlb_hit", "htlb_hit")
   midas.targetutils.PerfCounter(any_miss && htw.io.perf.ht0_hit_in_s_ready, "htlb_ht0_hit", "htlb_ht0_hit")
 
   // ------------------------------------------------------------------------------------------------
@@ -417,7 +417,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     io.req(w).ready := true.B
     io.resp(w).miss := htlb_miss(w)
     io.resp(w).addr := Mux(
-      !hm_enabled(w),
+      io.req(w).bits.passthrough,
       effectiveAddress(io.req(w).bits.haddr),
       Mux(!io.resp(w).miss,
         // Be explicit about the width & zero extension that happens here.

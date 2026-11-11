@@ -389,15 +389,6 @@ class WithBoomHandleSupport extends Config((site, here, up) => {
   }
 })
 
-class WithBoomPHTSupport extends Config((site, here, up) => {
-  case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
-    case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
-      enablePHTSupport = true
-    )))
-    case other => other
-  }
-})
-
 class WithHandleTracing extends Config((site, here, up) => {
   case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
     case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(

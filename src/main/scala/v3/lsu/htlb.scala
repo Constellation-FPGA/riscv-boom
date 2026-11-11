@@ -251,13 +251,13 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   /* Make all the connections to the HellaCache L1d$ that the HTW will need. */
   // IO assignments for walker
   io.mem.req.valid := false.B
-  io.mem.req.bits.phys := cfg.htwCfg.pht_enabled.B
+  io.mem.req.bits.phys := true.B
   io.mem.req.bits.cmd := rocket.M_XRD
   io.mem.req.bits.size := log2Ceil(xBytes).U
   io.mem.req.bits.signed := false.B
   io.mem.req.bits.addr := walk_addr
   io.mem.req.bits.idx.foreach(_ := walk_addr)
-  io.mem.req.bits.dprv := { if (cfg.htwCfg.pht_enabled) rocket.PRV.S.U else rocket.PRV.U.U }
+  io.mem.req.bits.dprv := rocket.PRV.S.U
   io.mem.req.bits.dv := false.B
   io.mem.req.bits.tag := DontCare
   io.mem.req.bits.no_resp := false.B

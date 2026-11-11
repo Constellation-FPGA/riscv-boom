@@ -12,12 +12,10 @@ import boom.v3.common._
 
 /** Describes the configuration of an [[HTW]].
  *
- * @param pht_enabled True if the address in the htBase CSR is physical.
  * @param cacheSize The number of entries in the HTW's HT0->HT1 cache, which
  *                  also serves as the working space for the HTW.
  */
 case class HTWConfig(
-  pht_enabled: Boolean = true,
   cacheSize: Int = 4,
 ) {
   // if expression is present to ensure we do not generate 0-width wires and
@@ -148,13 +146,13 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
   // IO assignments for walker
   io.mem.req.valid := false.B
-  io.mem.req.bits.phys := cfg.pht_enabled.B
+  io.mem.req.bits.phys := true.B
   io.mem.req.bits.cmd := rocket.M_XRD
   io.mem.req.bits.size := log2Ceil(xBytes).U
   io.mem.req.bits.signed := false.B
   io.mem.req.bits.addr := walk_addr
   io.mem.req.bits.idx.foreach(_ := walk_addr)
-  io.mem.req.bits.dprv := { if (cfg.pht_enabled) rocket.PRV.S.U else rocket.PRV.U.U }
+  io.mem.req.bits.dprv := rocket.PRV.S.U
   io.mem.req.bits.dv := false.B
   io.mem.req.bits.tag := DontCare
   io.mem.req.bits.no_resp := false.B

@@ -18,9 +18,7 @@ import boom.v3.common._
 case class HTWConfig(
   cacheSize: Int = 4,
 ) {
-  // if expression is present to ensure we do not generate 0-width wires and
-  // that we only do valid bit slicing when splitting.
-  val idxBits = if (cacheSize > 1) log2Ceil(cacheSize) else 1
+  val idxBits = log2Ceil(cacheSize)
 
   require(cacheSize > 0,
     s"[HTW] Translation cache/buffer must have at least 1 entry. You requested $cacheSize")

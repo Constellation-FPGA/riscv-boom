@@ -6,6 +6,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.rocket
 import freechips.rocketchip.rocket.HellaCacheIO
+import freechips.rocketchip.util.Split
 
 import boom.v3.common._
 
@@ -535,10 +536,5 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
  */
 final object HTLBUtils {
   /** Split a HID. */
-  // TODO: Just change rocket.Split to split a Bit instead of UInt?
-  // Should this be a method on HIDs instead?
-  def hidSplit(hid: HID, idx: Int) = {
-    val w = hid.id.getWidth
-    (hid.id(w-1, idx), hid.id(idx-1, 0))
-  }
+  def hidSplit(hid: HID, idx: Int) = Split(hid.id, idx)
 }

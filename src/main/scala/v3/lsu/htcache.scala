@@ -18,9 +18,7 @@ case class HTCacheConfig(
   nSets: Int,
   nWays: Int,
 ) {
-  // if expression is present to ensure we do not generate 0-width wires and
-  // that we only do valid bit slicing when splitting.
-  def idxBits = if (nSets > 1) log2Ceil(nSets) else 1
+  def idxBits = log2Ceil(nSets)
   def tagBits = Handle.HANDLE_ID_BITS - idxBits
 
   require(nSets > 0,

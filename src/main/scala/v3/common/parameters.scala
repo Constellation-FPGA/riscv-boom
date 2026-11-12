@@ -106,10 +106,16 @@ case class BoomCoreParams(
 
   /* Yukon stuff */
   usingHandles: Boolean = false,
-  nHTLBSets: Int = 4,
-  nHTLBWays: Int = 4,
+  htlbConfig: HTLBConfig = HTLBConfig(
+    htwCfg = HTWConfig(
+      cacheSize = 4,
+    ),
+    htCacheCfg = HTCacheConfig(
+      nSets = 4,
+      nWays = 4,
+    ),
+  ),
   enableHTLBSetCounters: Boolean = false, // one PerfCounter per HTLB set (walks per set)
-  HTWCacheSize: Int = 4,
   /** Trace state changes to handles on a per-handle basis. */
   enableHandleTracing: Boolean = false,
   /** Trace state changes to handles as the dTLB responds. */
@@ -342,7 +348,8 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   // Alaska/Yukon Handle parameters
   require(implies(boomParams.usingHandles, xLen == 64),
     "Yukon/Svalbard requires that xLen MUST be 64 bits")
-  require(implies(boomParams.usingHandles, (boomParams.HTWCacheSize > 0)),
+  require(implies(boomParams.usingHandles,
+                  (boomParams.htlbConfig.htwCfg.cacheSize > 0)),
     "Yukon's Handle Table Walker (HTW) must have a non-zero cache size")
 
   require(implies(boomParams.enableHandleTracing, boomParams.usingHandles),

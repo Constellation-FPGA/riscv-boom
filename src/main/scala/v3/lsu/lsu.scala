@@ -306,17 +306,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     "dcache_miss",
   )
 
-  val htlb = Module(new YukonHTLB(
-    HTLBConfig(
-      htwCfg = HTWConfig(
-        cacheSize = boomParams.HTWCacheSize,
-      ),
-      htCacheCfg = HTCacheConfig(
-        nSets = boomParams.nHTLBSets,
-        nWays = boomParams.nHTLBWays,
-      ),
-    )
-  ))
+  val htlb = Module(new YukonHTLB(boomParams.htlbConfig))
   io.htlb_mem <> htlb.io.mem
   htlb.io.clear_htlb := io.core.clear_htlb
   htlb.io.htInval := io.core.htInval

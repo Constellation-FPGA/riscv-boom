@@ -952,7 +952,7 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   /* If there is an exception, then we should never mark BOTH a handle fault and
    * a page fault for that entry. */
   for (w <- 0 until memWidth) {
-    assert((!(pf_ld(w) && hf_ld(w)) || !(pf_st(w) && hf_st(w))),
+    assert((!(pf_ld(w) && hf_ld(w)) && !(pf_st(w) && hf_st(w))),
       "[lsu] Svalbard: Received page fault AND handle fault for operation")
   }
 

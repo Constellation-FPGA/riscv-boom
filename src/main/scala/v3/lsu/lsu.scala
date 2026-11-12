@@ -880,6 +880,9 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
     val handles_in_bounds = LSU.widthMap(memWidth)(w =>
       handles(w).isHandle() &&
       (is_ht_infinite || (!is_ht_infinite && handles(w).inTable(io.core.htSize))))
+    /* TODO: Somehow use !handles(w).inTable(io.core.htSize) to raise a handle
+     * fault when attempting to operate on a handle outside of the handle
+     * table's bounds. */
 
     LSU.widthMap(memWidth)(w =>
       Mux(htlb_enabled,

@@ -194,13 +194,13 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     // The ## and Cat methods are the same here. KGH just wanted documentation
     // on 2 ways to achieve the same thing until this gets unified behind some
     // kind of useful abstraction.
-    when (rocket.isRead(cmd)) {
-      fault_haddr := HANDLE_FAULT_LD ## haddr.tail(2)
-    } .elsewhen (rocket.isWrite(cmd)) {
+    when (rocket.isWrite(cmd)) {
       fault_haddr := Cat(HANDLE_FAULT_ST, haddr(61, 0))
+    } .elsewhen (rocket.isRead(cmd)) {
+      fault_haddr := HANDLE_FAULT_LD ## haddr.tail(2)
     }//  .otherwise {
-      //   assert(false.B, "Handle command was NEITHER load nor store!")
-      // }
+    //   assert(false.B, "Handle command was NEITHER load nor store!")
+    // }
     require(fault_haddr.getWidth == 64, "Modified faulting haddr must be xLen wide")
     // assert(fault_haddr =/= 0.U, "Impossible handle fault on address 0x0")
     fault_haddr

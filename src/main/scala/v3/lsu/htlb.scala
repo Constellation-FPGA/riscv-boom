@@ -190,26 +190,21 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     require(cmd.getWidth == rocket.M_SZ,
       "Memory command is wrong width to build handle fault response addr for xTVAL CSR")
 
-    val haddr = handle.asUInt
+    val xcpt = Wire(new HandleException)
+    xcpt.xcpt_type := DontCare
+    xcpt.handle := handle
 
-    val fault_haddr = WireInit(0.U(xLen.W))
     // TODO: All commented-out code blocks in here can be re-enabled when
     // there is a boolean controlling if we should even be generating a
     // response, i.e., the resp_for_handle boolean would be passed into here.
-    //
-    // The ## and Cat methods are the same here. KGH just wanted documentation
-    // on 2 ways to achieve the same thing until this gets unified behind some
-    // kind of useful abstraction.
     when (rocket.isWrite(cmd)) {
-      fault_haddr := Cat(HANDLE_FAULT_ST, haddr(61, 0))
+      xcpt.xcpt_type := HandleExceptionType.store
     } .elsewhen (rocket.isRead(cmd)) {
-      fault_haddr := HANDLE_FAULT_LD ## haddr.tail(2)
+      xcpt.xcpt_type := HandleExceptionType.load
     }//  .otherwise {
     //   assert(false.B, "Handle command was NEITHER load nor store!")
     // }
-    require(fault_haddr.getWidth == 64, "Modified faulting haddr must be xLen wide")
-    // assert(fault_haddr =/= 0.U, "Impossible handle fault on address 0x0")
-    fault_haddr
+    xcpt
   }
 
   assert(implies(io.mem.req.valid,
@@ -315,7 +310,10 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     io.resp(w).miss := false.B
 
     io.resp(w).addr := Mux(resp_for_handle(w),
-      handle_fault_haddr_resp(req.bits.haddr, req.bits.cmd),
+      {
+        val fault = handle_fault_haddr_resp(req.bits.haddr, req.bits.cmd)
+        fault.toBits()
+      },
       effectiveAddress(io.req(w).bits.haddr))
 
     /* NOTE: If a handle is marked as writable, then this block of hardware
@@ -439,7 +437,10 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     io.resp(w).addr := Mux(resp_for_handle(w),
       Mux(!htlb_miss(w),
         Mux(faulted,
-          handle_fault_haddr_resp(io.req(w).bits.haddr, io.req(w).bits.cmd),
+          {
+            val fault = handle_fault_haddr_resp(io.req(w).bits.haddr, io.req(w).bits.cmd)
+            fault.toBits()
+          },
           // Be explicit about the width & zero extension that happens here.
           // io.resp(w).addr is xLen wide, but translatedHandle.addr is
           // maxSVAddrBits=39 and haddr.offset.asUInt is 32 bits.

@@ -3,6 +3,8 @@ package boom.v3.common
 import chisel3._
 import chisel3.util._
 
+import org.chipsalliance.cde.config.Parameters
+
 /** Type-level representation of an Alaska handle's ID.
 */
 final class HID extends Bundle {
@@ -149,5 +151,47 @@ object Handle {
   def toAddr(hid: HID, htBase: UInt,
              off: HandleOffset = HandleOffset(0.U)): UInt = {
     htBase + (hid.id * HANDLE_WIDTH_BYTES.U) + off.offset
+  }
+}
+
+/** An enumeration to describe the kinds of handle exceptions that can be
+  * raised. */
+final object HandleExceptionType extends ChiselEnum {
+  val load = Value("b00".U)
+  val store = Value("b01".U)
+}
+
+/** A Chisel Bundle describing a handle exception. */
+final class HandleException(implicit p: Parameters) extends BoomBundle()(p) {
+  /** The bit pattern used to denote this type of handle exception.
+    *
+    * This is used in various places to pass the kind of handle exception back
+    * to software through CSRs, because there is a single handle fault cause
+    * number. */
+  val xcpt_type = HandleExceptionType()
+
+  /** The handle that was faulted on. */
+  val handle = new Handle()
+
+  /** Convert this [[HandleException]] to hardware Bits. */
+  def toBits(): Bits = {
+    val haddr = handle.asUInt
+    // The ## and Cat methods are the same here. KGH just wanted documentation
+    // on 2 ways to achieve the same thing until this gets unified behind some
+    // kind of useful abstraction.
+    // val result = Cat(xcpt_type.asUInt.pad(2), haddr(xLen - 2 - 1, 0))
+    val result = xcpt_type.asUInt.pad(2) ## haddr.tail(2)
+    require(result.getWidth == xLen, "Modified faulting haddr must be xLen wide")
+    result
+  }
+}
+
+/** Companion object to build [[HandleException]]s more conveniently. */
+final object HandleException {
+  def apply(xcpt: HandleExceptionType.Type, handle: Handle)(implicit p: Parameters): HandleException = {
+    val xcpt = Wire(new HandleException())
+    xcpt.xcpt_type := xcpt
+    xcpt.handle := handle
+    xcpt
   }
 }

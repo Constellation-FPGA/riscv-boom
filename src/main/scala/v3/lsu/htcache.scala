@@ -78,7 +78,15 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   val entries = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(
     TaggedCacheEntry(cfg.tagBits, new TranslatedHandle())
   ))
-  val plru = new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
+
+  /* The SetAssocLRU does not handle conditions where nWays <= 1, because it
+   * cannot take more than one simultaneous update. It also does
+   * not make sense because nWays == 1 is a direct-mapped cache, which does not
+   * need to make choices about which way to replace. So we must handle it
+   * ourselves. */
+  val plru = Option.when(cfg.nWays > 1)(
+    new SetAssocLRU(cfg.nSets, cfg.nWays, "plru")
+  )
 
   /* "used" is set on a hit and cleared on a fill. */
   val used = RegInit(VecInit.fill(cfg.nSets, cfg.nWays)(false.B))
@@ -93,18 +101,16 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   })
 
   // Use PLRU to pick way or first invalid
-  val repl_way = {
-    /* NOTE: The SetAssocLRU does not handle conditions where nWays <= 1. So
-     * we must handle it ourselves. */
-    if (cfg.nWays > 1) {
+  val repl_way = plru match {
+    case Some(lru) => {
       val valid_entries = VecInit(entries(r_idx).map(_.valid))
       Mux(
         valid_entries.asUInt.andR,
-        plru.way(r_idx),
+        lru.way(r_idx),
         OHToUInt(PriorityEncoderOH(~valid_entries.asUInt))
       )
     }
-    else 0.U
+    case None => 0.U
   }
 
   /* Hit Logic (per lane)
@@ -133,9 +139,9 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   // the next fill in the set does not evict it before the retry. access()
   // applies the updates in order: lane 0, lane 1, ..., then the fill last.
   val plru_hit = LSU.widthMap(memWidth)(w => real_hits(w).asUInt.orR)
-  plru.access(
+  plru.foreach(_.access(
     lookup_hid_set :+ r_idx,
-    LSU.widthMap(memWidth)(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0))
+    LSU.widthMap(memWidth)(w => Pipe(plru_hit(w), hit_way(w), 0)) :+ Pipe(io.fill.valid, repl_way, 0)))
 
   for (w <- 0 until memWidth) {
     val this_lane_hit = real_hits(w).asUInt.orR

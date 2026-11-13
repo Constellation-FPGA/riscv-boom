@@ -32,6 +32,13 @@ class HTLBReq(implicit p: Parameters) extends BoomBundle()(p) {
   val passthrough = Bool()
 }
 
+/** A command from a store to a control handle. See [[HandleControl]]. */
+class HTLBCmd(implicit p: Parameters) extends BoomBundle()(p) {
+  val hid  = new HID()
+  val reg  = UInt(Handle.HANDLE_OFFSET_BITS.W) // register number, offset / 8
+  val data = UInt(xLen.W)
+}
+
 /** Exception types that the HTLB can raise for a handle fault.
  *
  * NOTE: You should not rely on this being a [[Bundle]]. It may become an
@@ -162,6 +169,17 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     val clear_htlb = Input(Bool())
     /** The size of the handle table in memory in bytes. */
     val htSize = Input(UInt(xLen.W))
+    /** Control register reads. Valid when [[HTLBReq.haddr]] is a control
+     * handle, [[HTLBReq.cmd]] is a read, and the HTLB has the register. The
+     * bits are the full 64-bit register. This ignores io.req.valid; the LSU
+     * qualifies it with the load that fires. */
+    val ctrl = Output(Vec(memWidth, Valid(UInt(xLen.W))))
+    /** True when [[HTLBReq.haddr]] is a control handle, [[HTLBReq.cmd]] is a
+     * plain store, and the HTLB has a command for the register. */
+    val ctrl_st = Output(Vec(memWidth, Bool()))
+    /** Commands from committed control stores. The HTLB finishes a command in
+     * the cycle that it accepts it. */
+    val cmd = Flipped(Decoupled(new HTLBCmd))
   })
 
   /** Convert a handle to a virtual address.
@@ -206,6 +224,30 @@ sealed abstract class HTLB(cfg: HTLBConfig)(implicit p: Parameters)
     // }
     xcpt
   }
+
+  /** The entry for the request's HID: the object base on a hit, 0 on a miss.
+   * Each HTLB drives it for the REG_PROBE control load. */
+  protected val ctrl_probe = Wire(Vec(memWidth, UInt(xLen.W)))
+
+  /* Control registers. The valid decode is parallel to the HTLB lookup and
+   * does not read the entries. Only the probe data reads them, and the LSU
+   * puts that into a register. An unknown register is not valid, so the
+   * access goes on to the DTLB and faults as before. */
+  for (w <- 0 until memWidth) {
+    val haddr = io.req(w).bits.haddr
+    val reg   = haddr.offset.offset >> log2Ceil(Handle.HANDLE_WIDTH_BYTES)
+    val magic = HandleControl.MAGIC.U(xLen.W) | haddr.hid.id
+
+    io.ctrl(w).valid := io.htlb_enabled && haddr.isControl() &&
+      io.req(w).bits.cmd === rocket.M_XRD &&
+      (reg === HandleControl.REG_MAGIC_TEST.U || reg === HandleControl.REG_PROBE.U)
+    io.ctrl(w).bits  := Mux(reg === HandleControl.REG_PROBE.U, ctrl_probe(w), magic)
+
+    io.ctrl_st(w) := io.htlb_enabled && haddr.isControl() &&
+      io.req(w).bits.cmd === rocket.M_XWR && reg === HandleControl.REG_INVALIDATE.U
+  }
+
+  def cmdIs(reg: Int): Bool = io.cmd.bits.reg === reg.U
 
   assert(implies(io.mem.req.valid,
                  (io.mem.req.bits.addr & ((1.U << io.mem.req.bits.size)) - 1.U) === 0.U),
@@ -275,6 +317,8 @@ final class FaultingHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   io.miss_rdy := true.B
   io.htInvald := false.B
+  io.cmd.ready := true.B
+  ctrl_probe.foreach(_ := 0.U) // no entries: every probe misses
 
   io.perf.walk_start := false.B
   io.perf.walk_lane  := 0.U
@@ -397,6 +441,12 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     cache.io.lookup(w).hid.bits  := hids(w)
   }
 
+  // REG_PROBE: the same lookup, without the passthrough mask.
+  for (w <- 0 until memWidth) {
+    cache.io.probe(w).hid := hids(w)
+    ctrl_probe(w) := Mux(cache.io.probe(w).hit, cache.io.probe(w).data.addr.pad(xLen), 0.U)
+  }
+
   // Walker arbitration: the lowest lane that misses starts the walk. A miss on
   // another lane in the same cycle reports a miss and retries, as a miss while
   // the walker is busy does.
@@ -474,9 +524,17 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   htw.io.inval.bits.all := io.clear_htlb || inval_all
   htw.io.inval.bits.hid := DontCare // HTW does not cache HIDs
 
-  cache.io.inval.valid := io.clear_htlb || inval_one || inval_all
+  // Control store commands. A walk in progress reads the HTE before the
+  // command and fills after it, so wait for the HTW to be ready: then the
+  // walk's entry is invalidated too. A walk that starts in this cycle reads
+  // the HTE after all older stores are done (the LSU waits for them), so its
+  // fill is current. An htInval invalidation in the same cycle goes first.
+  io.cmd.ready := htw.io.req.ready && !inval_one
+  val cmd_inval = io.cmd.fire && cmdIs(HandleControl.REG_INVALIDATE)
+
+  cache.io.inval.valid := io.clear_htlb || inval_one || inval_all || cmd_inval
   cache.io.inval.bits.all := io.clear_htlb || inval_all
-  cache.io.inval.bits.hid := io.htInval
+  cache.io.inval.bits.hid := Mux(inval_one, io.htInval, io.cmd.bits.hid)
 
   io.htInvald := inval_one || inval_all
 
@@ -500,6 +558,13 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
       printf("HTLB.htInval: cycle=%d hid=0x%x\n", timeline.cycle, io.htInval.asUInt)
     )
   }
+
+  when(cmd_inval) {
+    midas.targetutils.SynthesizePrintf(
+      printf("HTLB.cmd.inval: cycle=%d hid=0x%x\n", timeline.cycle, io.cmd.bits.hid.id)
+    )
+  }
+  midas.targetutils.PerfCounter(cmd_inval, "htlb_ctrl_inval", "htlb_ctrl_inval")
 
   midas.targetutils.PerfCounter(io.clear_htlb, "htlb_clear", "htlb_clear")
   midas.targetutils.PerfCounter(inval_one && !inval_all, "htlb_inval_one", "htlb_inval_one")

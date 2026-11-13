@@ -389,8 +389,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   * Remember that the HTCache "hits" for handle faults too! So we must
   * distinguish between lookup hits from actual misses and handle faults. */
   val htlb_miss = LSU.widthMap(memWidth)(w => {
-    io.req(w).valid && !io.req(w).bits.passthrough &&
-    !cache.io.lookup(w).hit && !cache.io.lookup(w).handle_fault
+    io.req(w).valid && !io.req(w).bits.passthrough && !cache.io.lookup(w).hit
   })
 
   for (w <- 0 until memWidth) {

@@ -45,7 +45,9 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
      * If the handle fault was raised by the [[HTW]] and is stored in the
      * [[HTCache]], when/if software fixes up the handle table, software
      * must also manually invalidate the old HID before attempting to
-     * translate that newly-fixed HID again.*/
+     * translate that newly-fixed HID again.
+     *
+     * Meaningless when [[hit]] is false.B. */
     val handle_fault = Output(Bool())
     /** The way that had a hit. Meaningless when [[hit]] is false.B. */
     val way = Output(UInt(log2Ceil(cfg.nWays).W))

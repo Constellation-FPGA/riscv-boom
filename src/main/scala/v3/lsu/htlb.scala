@@ -73,15 +73,34 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
  * was translated to produce the contained results. */
 class TranslatedHandle(implicit p: Parameters)
   extends BoomBundle()(p) {
+  /** Is this handle entry in the table valid? */
+  val valid = Bool()
+  /** If true.B, then this handle cannot be read/loaded from. */
+  val no_read = Bool()
+  /** If true.B, then this handle cannot be written/stored to. */
+  val no_write = Bool()
+
   /** The address a handle was translated to. */
   val addr = UInt(maxSVAddrBits.W)
+
+  /** The "immediate fault" property of a handle is determined by the
+   * combination of bits at the top of the handle translation. */
+  def immediate_fault(): Bool = {
+    /* The bit pattern of b011 at the top of the translated handle is the
+     * encoding we have chosen for now. */
+    valid && no_read && no_write
+  }
 }
 
 final object TranslatedHandle {
-  def apply(addr: UInt)(implicit p: Parameters): TranslatedHandle = {
+  def apply(valid: Bool, no_read: Bool, no_write: Bool,
+            addr: UInt)(implicit p: Parameters): TranslatedHandle = {
     val th = Wire(new TranslatedHandle())
     require(addr.getWidth == th.addr.getWidth,
       "Provided address must be correct width to be a translated handle")
+    th.valid := valid
+    th.no_read := no_read
+    th_no_write := no_write
     th.addr := addr
     th
   }

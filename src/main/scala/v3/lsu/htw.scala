@@ -96,8 +96,10 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    */
   // Make this private in the future?
   final class XLateResp(implicit p: Parameters) extends BoomBundle()(p) {
+    private val ignoredBits = xLen - (new TranslatedHandle).addr.getWidth
+
     /** This field should be completely ignored. */
-    val ignored = UInt((xLen - (new TranslatedHandle).addr.getWidth).W)
+    val ignored = UInt(ignoredBits.W)
     /** The virtual address for the handle table request.
      * This can be an HT0 address from an HT0 lookup, an HT1 address from an HT1
      * lookup, or a handle's final translation. */

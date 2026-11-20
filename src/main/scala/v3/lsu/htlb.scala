@@ -71,32 +71,33 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
  *
  * NOTE: This bundle does NOT track any information about which handle
  * was translated to produce the contained results. */
-class TranslatedHandle(implicit p: Parameters)
+class HTE(implicit p: Parameters)
   extends BoomBundle()(p) {
   /** The address a handle was translated to. */
   val addr = UInt(maxSVAddrBits.W)
 }
 
-final object TranslatedHandle {
-  def apply(addr: UInt)(implicit p: Parameters): TranslatedHandle = {
-    val th = Wire(new TranslatedHandle())
-    require(addr.getWidth == th.addr.getWidth,
+final object HTE {
+  def apply(valid: Bool, no_read: Bool, no_write: Bool, addr: UInt)
+           (implicit p: Parameters): HTE = {
+    val hte = Wire(new HTE())
+    require(addr.getWidth == hte.addr.getWidth,
       "Provided address must be correct width to be a translated handle")
-    th.addr := addr
-    th
+    hte.addr := addr
+    hte
   }
 
-  def apply()(implicit p: Parameters): TranslatedHandle = {
-    val th = Wire(new TranslatedHandle())
-    th.addr := 0.U
-    th
+  def apply()(implicit p: Parameters): HTE = {
+    val hte = Wire(new HTE())
+    hte.addr := 0.U
+    hte
   }
 }
 
 /** A fully translated handle. Tracks the handle HID that was translated, the
  * virtual address that it maps to, and if the handle translation was
  * exceptional (producing a handle fault).
- * The translation field will only contain a valid [[TranslatedHandle]] if the
+ * The translation field will only contain a valid [[HTE]] if the
  * exception flag is `false.B`. */
 final class HandleTranslation(implicit p: Parameters)
   extends BoomBundle()(p) {
@@ -106,7 +107,7 @@ final class HandleTranslation(implicit p: Parameters)
    * If this is true.B, then the translation field is invalid. */
   val fault = Bool()
   /** The address this translated handle maps to. */
-  val xlation = new TranslatedHandle()
+  val xlation = new HTE()
 }
 
 /** Events for PerfCounters in the LSU. Nothing in the HTLB reads these back. */
@@ -431,7 +432,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
   for (w <- 0 until memWidth) {
     val faulted = resp_for_handle(w) && cache.io.lookup(w).hit && cache.io.lookup(w).handle_fault
-    val translatedHandle: TranslatedHandle = cache.io.lookup(w).data
+    val hte: HTE = cache.io.lookup(w).data
 
     io.req(w).ready := true.B
     io.resp(w).miss := htlb_miss(w)
@@ -447,9 +448,9 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
             fault.toBits()
           },
           // Be explicit about the width & zero extension that happens here.
-          // io.resp(w).addr is xLen wide, but translatedHandle.addr is
-          // maxSVAddrBits=39 and haddr.offset.asUInt is 32 bits.
-          translatedHandle.addr.pad(xLen) + io.req(w).bits.haddr.offset.asUInt.pad(xLen)),
+          // io.resp(w).addr is xLen wide, but hte.addr is maxSVAddrBits=39 and
+          // haddr.offset.asUInt is 32 bits.
+          hte.addr.pad(xLen) + io.req(w).bits.haddr.offset.asUInt.pad(xLen)),
         0.U),
       effectiveAddress(io.req(w).bits.haddr)
     )

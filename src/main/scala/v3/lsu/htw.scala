@@ -63,7 +63,7 @@ final class HTWIO(cfg: HTWConfig)(implicit p: Parameters) extends BoomBundle {
 }
 
 /** The HTW takes in a single handle per clock cycle and attempts to translate
-  * it to a [[TranslatedHandle]] and outputs it as an [[HandleTranslation]]
+  * it to a [[HTE]] and outputs it as an [[HandleTranslation]]
   * response.
   *
   * NOTE: This module does NOT depend on memWidth, so there is a SINGLE HTW
@@ -96,7 +96,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    */
   // Make this private in the future?
   final class XLateResp(implicit p: Parameters) extends BoomBundle()(p) {
-    private val ignoredBits = xLen - (new TranslatedHandle).addr.getWidth
+    private val ignoredBits = xLen - (new HTE).addr.getWidth
 
     /** This field should be completely ignored. */
     val ignored = UInt(ignoredBits.W)
@@ -261,7 +261,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * response data is the handle's translated virtual address.*/
   io.fill.valid := translation_done
   io.fill.bits.hid := hid_req
-  io.fill.bits.xlation := TranslatedHandle(mem_resp_data.addr)
+  io.fill.bits.xlation := HTE(mem_resp_data.addr)
   io.fill.bits.fault := false.B
 
   switch(state) {
@@ -375,7 +375,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         translation_done := true.B
         /* HellaCache gave us an exception! Raise a handle fault! */
         io.fill.bits.fault := true.B
-        io.fill.bits.xlation := TranslatedHandle()
+        io.fill.bits.xlation := HTE()
         // Return the HTW to the ready state to potentially accept another
         // translation.
         next_state := HTWState.s_ready
@@ -412,7 +412,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         translation_done := true.B
         /* HellaCache gave us an exception! Raise a handle fault! */
         io.fill.bits.fault := true.B
-        io.fill.bits.xlation := TranslatedHandle()
+        io.fill.bits.xlation := HTE()
         // Return the HTW to the ready state to potentially accept another
         // translation.
         next_state := HTWState.s_ready

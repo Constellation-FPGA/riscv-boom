@@ -52,7 +52,7 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
     /** The way that had a hit. Meaningless when [[hit]] is false.B. */
     val way = Output(UInt(log2Ceil(cfg.nWays).W))
     /** The hit entry's data. Meaningless when [[hit]] is false.B. */
-    val data = Output(new TranslatedHandle())
+    val data = Output(new HTE())
     // FIXME: Should way & data become a bundle and be "hidden" inside a Valid?
   }
 
@@ -76,13 +76,13 @@ final class HTCacheIO(cfg: HTCacheConfig)(implicit p: Parameters)
 final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   extends BoomModule()(p) {
 
-  private final class HTCacheEntry extends TranslatedHandle {
+  private final class HTCacheEntry extends HTE {
     val fault = Bool()
   }
   private object HTCacheEntry {
-    def apply(xlate: TranslatedHandle, fault: Bool) = {
+    def apply(hte: HTE, fault: Bool) = {
       val e = Wire(new HTCacheEntry)
-      e.addr  := xlate.addr
+      e.addr  := hte.addr
       e.fault := fault
       e
     }

@@ -85,6 +85,12 @@ final object TranslatedHandle {
     th.addr := addr
     th
   }
+
+  def apply()(implicit p: Parameters): TranslatedHandle = {
+    val th = Wire(new TranslatedHandle())
+    th.addr := 0.U
+    th
+  }
 }
 
 /** A fully translated handle. Tracks the handle HID that was translated, the

@@ -375,7 +375,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         translation_done := true.B
         /* HellaCache gave us an exception! Raise a handle fault! */
         io.fill.bits.fault := true.B
-        io.fill.bits.xlation := TranslatedHandle(0.U(maxSVAddrBits.W))
+        io.fill.bits.xlation := TranslatedHandle()
         // Return the HTW to the ready state to potentially accept another
         // translation.
         next_state := HTWState.s_ready
@@ -412,7 +412,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         translation_done := true.B
         /* HellaCache gave us an exception! Raise a handle fault! */
         io.fill.bits.fault := true.B
-        io.fill.bits.xlation := TranslatedHandle(0.U(maxSVAddrBits.W))
+        io.fill.bits.xlation := TranslatedHandle()
         // Return the HTW to the ready state to potentially accept another
         // translation.
         next_state := HTWState.s_ready

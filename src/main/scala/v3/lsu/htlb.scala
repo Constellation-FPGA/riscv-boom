@@ -456,18 +456,71 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
   // ------------------------------------------------------------------------------------------------
 
   for (w <- 0 until memWidth) {
-    val faulted = resp_for_handle(w) && cache.io.lookup(w).hit && cache.io.lookup(w).handle_fault
+    // Did the HTCache produce a hit for a handle (real or fault)
+    val handleHit = resp_for_handle(w) && cache.io.lookup(w).hit
     val hte: HTE = cache.io.lookup(w).data
+
+    /* Determine the kind of handle fault that this should be, based on the
+     * operation that was requested and the current set of "permission" bits
+     * set on the HTE. */
+
+    // This was a fault in translation (HTW had problems).
+    val xlationFault = handleHit && cache.io.lookup(w).handle_fault
+
+    /* An "immediate handle fault" is a construct that NCW requested. The idea
+     * is that ANY operation on these HTEs will IMMEDIATELY cause a handle
+     * fault. NCW has plans to use this in the Alaska rutime to do things. */
+    val immediateFault = handleHit && hte.immediateFault()
+
+    // Any operation (load or store) to an invalid handle must be a fault.
+    val invalidFault = handleHit && !hte.valid && !hte.immediateFault()
+
+    // Figure out what kind of usage handle fault this is.
+    val readFault  = handleHit && rocket.isRead(io.req(w).bits.cmd) &&
+                     hte.valid && hte.no_read
+    val writeFault = handleHit && rocket.isWrite(io.req(w).bits.cmd) &&
+                     hte.valid && hte.no_write
+
+    val faults = VecInit(
+      Seq(xlationFault, immediateFault, invalidFault, readFault, writeFault)
+    )
+
+    assert(PopCount(faults) <= 1.U,
+      "Can only throw ONE exception type/cause for a handle fault!")
 
     io.req(w).ready := true.B
     io.resp(w).miss := htlb_miss(w)
 
-    io.resp(w).handle_fault.ld := faulted && rocket.isRead(io.req(w).bits.cmd)
-    io.resp(w).handle_fault.st := faulted && rocket.isWrite(io.req(w).bits.cmd)
+    // XXX: We rely on Chisel's last-assigment rule/property with this!
+    io.resp(w).handle_fault.ld := false.B
+    io.resp(w).handle_fault.st := false.B
+    // XXX: Beware, the when-chain is order dependent!
+    when(xlationFault) {
+      // Could not translate the handle
+      io.resp(w).handle_fault.ld := rocket.isRead(io.req(w).bits.cmd)
+      io.resp(w).handle_fault.st := rocket.isWrite(io.req(w).bits.cmd)
+
+    } .elsewhen(invalidFault) {
+      // Handle was translated but invalid
+      io.resp(w).handle_fault.ld := rocket.isRead(io.req(w).bits.cmd)
+      io.resp(w).handle_fault.st := rocket.isWrite(io.req(w).bits.cmd)
+    } .elsewhen(immediateFault) {
+      // Handle was valid, but marked as immediate fault
+      io.resp(w).handle_fault.ld := rocket.isRead(io.req(w).bits.cmd)
+      io.resp(w).handle_fault.st := rocket.isWrite(io.req(w).bits.cmd)
+    } .elsewhen(readFault) {
+      // Handle was valid, but read performed on no-read handle
+      io.resp(w).handle_fault.ld := rocket.isRead(io.req(w).bits.cmd)
+      io.resp(w).handle_fault.st := rocket.isWrite(io.req(w).bits.cmd)
+    } .elsewhen(writeFault) {
+      // Handle was valid, but write performed on no-write handle
+      io.resp(w).handle_fault.ld := rocket.isRead(io.req(w).bits.cmd)
+      io.resp(w).handle_fault.st := rocket.isWrite(io.req(w).bits.cmd)
+    }
 
     io.resp(w).addr := Mux(resp_for_handle(w),
       Mux(!htlb_miss(w),
-        Mux(faulted,
+        Mux(faults.reduce(_ || _),
           {
             val fault = handle_fault_haddr_resp(io.req(w).bits.haddr, io.req(w).bits.cmd)
             fault.toBits()

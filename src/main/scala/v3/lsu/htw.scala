@@ -95,7 +95,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * for us to reason about and work work.
    */
   // Make this private in the future?
-  final class XLateResp(implicit p: Parameters) extends BoomBundle()(p) {
+  final class HTXResp(implicit p: Parameters) extends BoomBundle()(p) {
     private val ignoredBits = xLen - (new HTE).addr.getWidth
 
     /** This field should be completely ignored. */
@@ -216,7 +216,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * common than an intermediate request (HT0 or HT1 base addresses), we have
    * a conversion step at the end when an HTE should be produced instead of
    * making it a permanent fixture throughout this module. */
-  val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new XLateResp)
+  val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new HTXResp)
 
   /* The HID that is currently being translated/walked.
    * The register "holds onto" the HID that was requested so that subsequent FSM

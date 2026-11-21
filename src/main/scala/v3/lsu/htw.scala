@@ -104,6 +104,15 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
      * This can be an HT0 address from an HT0 lookup, an HT1 address from an HT1
      * lookup, or a handle's final translation. */
     val addr = UInt(maxSVAddrBits.W)
+
+    def toHTE(): HTE = {
+      HTE(
+        valid = ignored(ignoredBits - 1),
+        no_read = ignored(ignoredBits - 2),
+        no_write = ignored(ignoredBits - 3),
+        addr = addr,
+      )
+    }
   }
 
   val io = IO(new HTWIO(cfg))
@@ -192,7 +201,15 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * The HTLB (and therefore the HTW) is disabled when the core is not
    * in PRV.U, which aborts in-flight walks too. */
   val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
-  // "Typecast" the UInt(64.W) from the HellaCacheResp to a form we prefer.
+  /* "Typecast" the UInt(64.W) from the HellaCacheResp to a form we prefer.
+   *
+   * We treat any responses we receive from the memory system as a translation
+   * response. However, there are a subset of responses that produce "something
+   * else". This happens when handle translation finishes walking HT1->HTE and
+   * a handle table entry (HTE) is returned. Because these are relatively less
+   * common than an intermediate request (HT0 or HT1 base addresses), we have
+   * a conversion step at the end when an HTE should be produced instead of
+   * making it a permanent fixture throughout this module. */
   val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new XLateResp)
 
   /* The HID that is currently being translated/walked.
@@ -261,7 +278,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * response data is the handle's translated virtual address.*/
   io.fill.valid := translation_done
   io.fill.bits.hid := hid_req
-  io.fill.bits.xlation := HTE(mem_resp_data.addr)
+  io.fill.bits.xlation := mem_resp_data.toHTE()
   io.fill.bits.fault := false.B
 
   switch(state) {

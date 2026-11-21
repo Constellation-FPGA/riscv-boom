@@ -73,22 +73,48 @@ class HTLBResp(implicit p: Parameters) extends BoomBundle()(p) {
  * was translated to produce the contained results. */
 class HTE(implicit p: Parameters)
   extends BoomBundle()(p) {
+  /** Is this handle entry in the table marked as invalid?
+   *
+   * XXX: This is NOT a validity signal in the sense of [[Valid]]! This valid
+   * does NOT describe that the rest of the signals inside this bundle being
+   * valid. Instead it describes the validity of the handle table entry's
+   * mapping. */
+  val invalid = Bool()
+  /** If true.B, then this handle cannot be read/loaded from. */
+  val no_read = Bool()
+  /** If true.B, then this handle cannot be written/stored to. */
+  val no_write = Bool()
+
   /** The address a handle was translated to. */
   val addr = UInt(maxSVAddrBits.W)
+
+  /** The "immediate fault" property of a handle is determined by the
+   * combination of bits at the top of the handle translation. */
+  def immediateFault(): Bool = {
+    /* The bit pattern of b011 at the top of the translated handle is the
+     * encoding we have chosen for now. */
+    !invalid && no_read && no_write
+  }
 }
 
 final object HTE {
-  def apply(valid: Bool, no_read: Bool, no_write: Bool, addr: UInt)
+  def apply(invalid: Bool, no_read: Bool, no_write: Bool, addr: UInt)
            (implicit p: Parameters): HTE = {
     val hte = Wire(new HTE())
     require(addr.getWidth == hte.addr.getWidth,
       "Provided address must be correct width to be a translated handle")
+    hte.invalid := invalid
+    hte.no_read := no_read
+    hte.no_write := no_write
     hte.addr := addr
     hte
   }
 
   def apply()(implicit p: Parameters): HTE = {
     val hte = Wire(new HTE())
+    hte.invalid := false.B
+    hte.no_read := false.B
+    hte.no_write := false.B
     hte.addr := 0.U
     hte
   }

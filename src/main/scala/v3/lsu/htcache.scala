@@ -82,6 +82,9 @@ final class HTCache(cfg: HTCacheConfig)(implicit p: Parameters)
   private object HTCacheEntry {
     def apply(hte: HTE, fault: Bool) = {
       val e = Wire(new HTCacheEntry)
+      e.invalid := hte.invalid
+      e.no_read := hte.no_read
+      e.no_write := hte.no_write
       e.addr  := hte.addr
       e.fault := fault
       e

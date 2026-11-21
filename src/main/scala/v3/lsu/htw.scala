@@ -94,8 +94,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * 64-bit result from memory into an object with named fields that are easier
    * for us to reason about and work work.
    */
-  // Make this private in the future?
-  final class HTXResp(implicit p: Parameters) extends BoomBundle()(p) {
+  private final class HTXResp(implicit p: Parameters) extends BoomBundle()(p) {
     private val ignoredBits = xLen - (new HTE).addr.getWidth
 
     /** This field should be completely ignored. */
@@ -206,7 +205,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    *
    * The HTLB (and therefore the HTW) is disabled when the core is not
    * in PRV.U, which aborts in-flight walks too. */
-  val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
+  private val mem_resp_valid = RegNext(io.mem.resp.valid, false.B)
   /* "Typecast" the UInt(64.W) from the HellaCacheResp to a form we prefer.
    *
    * We treat any responses we receive from the memory system as a translation
@@ -216,7 +215,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * common than an intermediate request (HT0 or HT1 base addresses), we have
    * a conversion step at the end when an HTE should be produced instead of
    * making it a permanent fixture throughout this module. */
-  val mem_resp_data  = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new HTXResp)
+  private val mem_resp_data = RegNext(io.mem.resp.bits.data, 0.U).asTypeOf(new HTXResp)
 
   /* The HID that is currently being translated/walked.
    * The register "holds onto" the HID that was requested so that subsequent FSM

@@ -75,19 +75,19 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   /** States for the FSM in the HTW. */
   private object HTWState extends ChiselEnum {
     /** Ready. Waiting for a miss to start the state machine. */
-    val s_ready = Value
+    val ready = Value
     /** Read cache, or issue a request for the entry inside the HT0 level of the
      * handle table in-memory. */
-    val s_request_ht0 = Value
+    val request_ht0 = Value
     /** Wait for the HT0 entry to return. */
-    val s_wait_ht0 = Value
+    val wait_ht0 = Value
     /** Read cache, or issue a request for the handle's translated address from
      * the HT1 level of the handle table in-memory. */
-    val s_request_ht1 = Value
+    val request_ht1 = Value
     /** Wait for the HT1 entry to return. Refill when done. */
-    val s_wait_ht1 = Value
+    val wait_ht1 = Value
 
-    def waiting(state: HTWState.Type): Bool = state =/= s_ready
+    def waiting(state: HTWState.Type): Bool = state =/= ready
   }
 
   /** A translation response. This is an internal class used to cast the 8-byte
@@ -193,7 +193,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.mem.uncached_resp.foreach(_.ready := true.B)
 
   // XXX: must use RegNext here to break the combinational path
-  //      io.mem.resp.valid → io.mem.req.valid that exists in s_wait_ht0.
+  //      io.mem.resp.valid → io.mem.req.valid that exists in wait_ht0.
   //      Without this register, MIDAS's token model deadlocks at cycle 3.
   //      The 1-cycle delay is acceptable given the multi-cycle cache latency.
   /* The LSU's Hella FSM only allows one outstanding request. The h_wait to
@@ -201,7 +201,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * here. This happens because the HTW only issues requests with dprv = PRV.S,
    * which has every trap abort in-flight walks. The Hella FSM only allows one
    * outstanding request, so together with the RegNext, a new walk's
-   * s_wait_{ht0,ht1} state never sees an old response.
+   * wait_{ht0,ht1} state never sees an old response.
    *
    * The HTLB (and therefore the HTW) is disabled when the core is not
    * in PRV.U, which aborts in-flight walks too. */
@@ -235,16 +235,16 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
    * Because the HTLB can be enabled and disabled at runtime, we only let the
    * FSM run when the user has started the HTLB, and therefore the HTW. If the
    * user turns the HTLB off, reset the HTW's FSM to the ready/start state. */
-  private val state = RegInit(HTWState.s_ready)
+  private val state = RegInit(HTWState.ready)
   private val next_state = WireDefault(state)
 
-  state := Mux(io.htw_enabled, next_state, HTWState.s_ready)
+  state := Mux(io.htw_enabled, next_state, HTWState.ready)
 
   /* This HTW implementation can only accept, work with, translate, and return
    * one handle at a time, so the single register that holds onto the HID is
    * only valid when the request comes in and the hid_req register is holding
    * something. The HTW is only walking when it is not in the ready state. */
-  io.perf.walking_hid.valid := state =/= HTWState.s_ready
+  io.perf.walking_hid.valid := state =/= HTWState.ready
   io.perf.walking_hid.bits  := hid_req
 
   // Raised to true.B when the currently in-flight handle finishes translation.
@@ -256,27 +256,27 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   timeline.trackState("htlb.state", "retry_nack", io.mem.s2_nack)
   midas.targetutils.PerfCounter(io.mem.req.fire, "htlb_mem_req", "htlb_mem_req")
   midas.targetutils.PerfCounter(io.mem.s2_nack &&
-                                (state === HTWState.s_wait_ht0 || state === HTWState.s_wait_ht1),
+                                (state === HTWState.wait_ht0 || state === HTWState.wait_ht1),
     "htlb_mem_nack", "htlb_mem_nack")
 
 
-  when(!io.htw_enabled && state =/= HTWState.s_ready) {
+  when(!io.htw_enabled && state =/= HTWState.ready) {
     midas.targetutils.SynthesizePrintf(
-      printf("HTLB.disabled: cycle=%d state=%d flushed to s_ready\n",
+      printf("HTLB.disabled: cycle=%d state=%d flushed to ready\n",
         timeline.cycle, state.asUInt)
     )
   }
-  timeline.trackState("htlb.state", "request_ht0", state === HTWState.s_request_ht0)
-  timeline.trackState("htlb.state", "wait_ht0", state === HTWState.s_wait_ht0)
-  timeline.trackState("htlb.state", "request_ht1", state === HTWState.s_request_ht1)
-  timeline.trackState("htlb.state", "wait_ht1", state === HTWState.s_wait_ht1)
+  timeline.trackState("htlb.state", "request_ht0", state === HTWState.request_ht0)
+  timeline.trackState("htlb.state", "wait_ht0", state === HTWState.wait_ht0)
+  timeline.trackState("htlb.state", "request_ht1", state === HTWState.request_ht1)
+  timeline.trackState("htlb.state", "wait_ht1", state === HTWState.wait_ht1)
   midas.targetutils.PerfCounter(HTWState.waiting(state), "htlb_waiting", "htlb_waiting")
-  midas.targetutils.PerfCounter(state === HTWState.s_request_ht0 || state === HTWState.s_request_ht1, "htlb_mem_stall_cycles", "htlb_mem_stall_cycles")
-  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht0 || state === HTWState.s_wait_ht1, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
-  midas.targetutils.PerfCounter(state === HTWState.s_wait_ht0 && mem_resp_valid && io.mem.req.fire,
+  midas.targetutils.PerfCounter(state === HTWState.request_ht0 || state === HTWState.request_ht1, "htlb_mem_stall_cycles", "htlb_mem_stall_cycles")
+  midas.targetutils.PerfCounter(state === HTWState.wait_ht0 || state === HTWState.wait_ht1, "htlb_mem_wait_cycles", "htlb_mem_wait_cycles")
+  midas.targetutils.PerfCounter(state === HTWState.wait_ht0 && mem_resp_valid && io.mem.req.fire,
     "htlb_fast_path_fired", "htlb_fast_path_fired")
 
-  io.req.ready := state === HTWState.s_ready
+  io.req.ready := state === HTWState.ready
 
   /* The HandleTranslation bundle is the HTW's response. It is only valid when
    * the handle translation is done. When the translation is done, the memory
@@ -287,7 +287,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   io.fill.bits.fault := false.B
 
   switch(state) {
-    is(HTWState.s_ready) {
+    is(HTWState.ready) {
       when (io.req.valid) {
         val walk_hid = io.req.bits
 
@@ -318,9 +318,9 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
                   timeline.cycle, walk_hid.id, walk_addr)
               )
             }
-            next_state := HTWState.s_wait_ht1
+            next_state := HTWState.wait_ht1
           }.otherwise {
-            next_state := HTWState.s_request_ht1
+            next_state := HTWState.request_ht1
           }
         }.otherwise {
           /* If there is not a valid HT0->HT1 mapping, then do the full HT0
@@ -335,15 +335,15 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
                   timeline.cycle, walk_hid.id, walk_addr)
               )
             }
-            next_state := HTWState.s_wait_ht0
+            next_state := HTWState.wait_ht0
           }.otherwise {
-            next_state := HTWState.s_request_ht0
+            next_state := HTWState.request_ht0
           }
         }
       }
     }
 
-    is(HTWState.s_request_ht0) {
+    is(HTWState.request_ht0) {
       // Request HT0 entry from memory
       walk_addr := io.htBase + hidHT0(hid_req) * 8.U
       io.mem.req.valid := true.B
@@ -359,11 +359,11 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
               timeline.cycle, hid_req.id, walk_addr)
           )
         }
-        next_state := HTWState.s_wait_ht0
+        next_state := HTWState.wait_ht0
       }
     }
 
-    is(HTWState.s_wait_ht0) {
+    is(HTWState.wait_ht0) {
       // Wait for outer walk response
       when(mem_resp_valid) {
         if (boomParams.enableStateTracing) {
@@ -387,12 +387,12 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         io.mem.req.valid := true.B
 
         when (io.mem.req.fire) {
-          next_state := HTWState.s_wait_ht1
+          next_state := HTWState.wait_ht1
         } .otherwise {
-          next_state := HTWState.s_request_ht1
+          next_state := HTWState.request_ht1
         }
       }.elsewhen(io.mem.s2_nack) {
-        next_state := HTWState.s_request_ht0
+        next_state := HTWState.request_ht0
       }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
         translation_done := true.B
         /* HellaCache gave us an exception! Raise a handle fault! */
@@ -400,11 +400,11 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         io.fill.bits.xlation := HTE()
         // Return the HTW to the ready state to potentially accept another
         // translation.
-        next_state := HTWState.s_ready
+        next_state := HTWState.ready
       }
     }
 
-    is(HTWState.s_request_ht1) {
+    is(HTWState.request_ht1) {
       // Request Inner Entry (HTE)
       assert(translation_buffer(getIndex(hid_req)).valid,
         cf"Translation buffer has invalid HT1 data for HID $hid_req at index ${getIndex(hid_req)}")
@@ -418,18 +418,18 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
               timeline.cycle, hid_req.id, walk_addr)
           )
         }
-        next_state := HTWState.s_wait_ht1
+        next_state := HTWState.wait_ht1
       }
     }
 
-    is(HTWState.s_wait_ht1) {
+    is(HTWState.wait_ht1) {
       when(mem_resp_valid) {
         // The response is taken and passed to the HTCache through the io.fill
         // bundle.
-        next_state := HTWState.s_ready
+        next_state := HTWState.ready
         translation_done := true.B
       }.elsewhen(io.mem.s2_nack) {
-        next_state := HTWState.s_request_ht1
+        next_state := HTWState.request_ht1
       }.elsewhen(io.mem.s2_xcpt.asUInt.orR) {
         translation_done := true.B
         /* HellaCache gave us an exception! Raise a handle fault! */
@@ -437,7 +437,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         io.fill.bits.xlation := HTE()
         // Return the HTW to the ready state to potentially accept another
         // translation.
-        next_state := HTWState.s_ready
+        next_state := HTWState.ready
       }
     }
   }
@@ -461,7 +461,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
     /* Invalidating everything in the HTLB only done when switching handle
      * tables. In that case, we should also reset the HTW to its idle state and
      * suppress any outgoing fills or memory requests. */
-    state := HTWState.s_ready
+    state := HTWState.ready
     io.fill.valid := false.B
     io.mem.req.valid := false.B
     /* NOTE: Do NOT set io.req.ready to false.B! An invalidation does NOT mean

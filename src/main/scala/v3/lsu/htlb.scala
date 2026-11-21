@@ -466,20 +466,22 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
 
     // This was a fault in translation (HTW had problems).
     val xlationFault = handleHit && cache.io.lookup(w).handle_fault
+    // The HTE fields are meaningful only for a translation without a fault.
+    val hteHit = handleHit && !cache.io.lookup(w).handle_fault
 
     /* An "immediate handle fault" is a construct that NCW requested. The idea
      * is that ANY operation on these HTEs will IMMEDIATELY cause a handle
      * fault. NCW has plans to use this in the Alaska rutime to do things. */
-    val immediateFault = handleHit && hte.immediateFault()
+    val immediateFault = hteHit && hte.immediateFault()
 
     // Any operation (load or store) to an invalid handle must be a fault.
-    val invalidFault = handleHit && !hte.valid && !hte.immediateFault()
+    val invalidFault = hteHit && !hte.valid
 
     // Figure out what kind of usage handle fault this is.
-    val readFault  = handleHit && rocket.isRead(io.req(w).bits.cmd) &&
-                     hte.valid && hte.no_read
-    val writeFault = handleHit && rocket.isWrite(io.req(w).bits.cmd) &&
-                     hte.valid && hte.no_write
+    val readFault  = hteHit && rocket.isRead(io.req(w).bits.cmd) &&
+                     hte.valid && hte.no_read && !hte.no_write
+    val writeFault = hteHit && rocket.isWrite(io.req(w).bits.cmd) &&
+                     hte.valid && hte.no_write && !hte.no_read
 
     val faults = VecInit(
       Seq(xlationFault, immediateFault, invalidFault, readFault, writeFault)

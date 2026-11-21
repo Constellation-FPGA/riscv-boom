@@ -107,7 +107,8 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
 
     def toHTE(): HTE = {
       HTE(
-        valid = ignored(ignoredBits - 1),
+        // Bit 63 set means the HTE is invalid.
+        valid = !ignored(ignoredBits - 1),
         no_read = ignored(ignoredBits - 2),
         no_write = ignored(ignoredBits - 3),
         addr = addr,

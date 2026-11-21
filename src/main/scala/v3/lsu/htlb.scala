@@ -448,7 +448,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     LSU.widthMap(memWidth)(w => {
       io.req(w).fire && !io.req(w).bits.passthrough && cache.io.lookup(w).hit && !cache.io.lookup(w).handle_fault
   })), "htlb_good_hit", "htlb_good_hit")
-  midas.targetutils.PerfCounter(any_miss && htw.io.perf.ht0_hit_in_s_ready, "htlb_ht0_hit", "htlb_ht0_hit")
+  midas.targetutils.PerfCounter(any_miss && htw.io.perf.ht0_cache_hit, "htlb_ht0_hit", "htlb_ht0_hit")
 
   // ------------------------------------------------------------------------------------------------
   // ------------------------------------------------------------------------------------------------
@@ -625,7 +625,7 @@ final class YukonHTLB(cfg: HTLBConfig)(implicit p: Parameters)
     midas.targetutils.PerfCounter(walk_start, "htlb_walk_start", "htlb_walk_start")
     midas.targetutils.PerfCounter.identity(walk_max, "htlb_walk_lat_max", "htlb_walk_lat_max")
 
-    midas.targetutils.PerfCounter(walk_start && !htw.io.perf.ht0_hit_in_s_ready,
+    midas.targetutils.PerfCounter(walk_start && !htw.io.perf.ht0_cache_hit,
       "htlb_walk_ht0_miss", "htlb_walk_ht0_miss")
 
     if (boomParams.enableHTLBSetCounters) {

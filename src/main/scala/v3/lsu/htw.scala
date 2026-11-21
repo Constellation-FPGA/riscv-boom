@@ -35,7 +35,7 @@ final class HTWPerf extends Bundle {
   /** Outputs true.B if the incoming handle translation request hits in the
    * [[HTW]]'s translation buffer, which means the htBase -> HT0 step of the
    * translation is skipped and HT0 -> HT1 translation is done immediately. */
-  val ht0_hit_in_s_ready = Output(Bool())
+  val ht0_cache_hit = Output(Bool())
   /** The [[HID]] that is currently being walked/translated by the [[HTW]].
    * The HTW is responsible for holding this at the HID that is currently being
    * translated while the valid line is high.*/
@@ -121,7 +121,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
   }
 
   val io = IO(new HTWIO(cfg))
-  io.perf.ht0_hit_in_s_ready := false.B
+  io.perf.ht0_cache_hit := false.B
 
   /* The zeroth level is indexed by the top 12 bits of a handle ID and the
    * first level is indexed by the remaining bits (18 bits in this case).
@@ -308,7 +308,7 @@ final class HTW(cfg: HTWConfig)(implicit p: Parameters)
         val ht0_hit = ht0_entry.hit(getTag(walk_hid))
 
         when(ht0_hit) {
-          io.perf.ht0_hit_in_s_ready := true.B
+          io.perf.ht0_cache_hit := true.B
           walk_addr := ht0_entry.data + (hidHT1(walk_hid) * 8.U)
           io.mem.req.valid := true.B
           when(io.mem.req.fire) {

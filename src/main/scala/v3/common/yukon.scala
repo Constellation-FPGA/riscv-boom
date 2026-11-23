@@ -70,6 +70,10 @@ final class Handle extends Bundle {
    * provided for completeness more than anything. */
   def isHandle(): Bool = Handle.isHandle(this.handle)
 
+  /** Return true.B if these bits are a control handle. See
+   * [[Handle.isControl]]. */
+  def isControl(): Bool = Handle.isControl(this.handle)
+
   /** Return this handle's Handle ID (HID). */
   def hid: HID = split()._2
 
@@ -130,6 +134,28 @@ object Handle {
     require(addr.getWidth == HANDLE_WIDTH_BITS,
       "Provided address is not wide enough to be a handle.")
     addr === HANDLE_PATTERN
+  }
+
+  /** The bit-pattern of a control handle: an access to the HTLB itself. */
+  private val CONTROL_PATTERN: BitPat = {
+    val hidPat = BitPat("b" + "?" * HANDLE_ID_BITS)
+    val offPat = BitPat("b" + "?" * HANDLE_OFFSET_BITS)
+    BitPat("b11") ## hidPat ## offPat
+  }
+  require(HANDLE_WIDTH_BITS == CONTROL_PATTERN.getWidth,
+    s"Control handle mask must be same length as xLen, xLen={xLen}")
+
+  /** Return true.B if ADDR has the control handle pattern (top bits 11).
+    *
+    * A control handle has the same fields as a handle. The offset field
+    * selects an HTLB control register: register R is at offset R * 8.
+    * This is only meaningful in U-mode with the HTLB on. Elsewhere, top
+    * bits 11 are a normal (supervisor) virtual address.
+    */
+  def isControl(addr: UInt): Bool = {
+    require(addr.getWidth == HANDLE_WIDTH_BITS,
+      "Provided address is not wide enough to be a handle.")
+    addr === CONTROL_PATTERN
   }
 
   /** Convert a [[Handle]] to an address.
@@ -194,4 +220,26 @@ final object HandleException {
     xcpt.handle := handle
     xcpt
   }
+}
+
+/** HTLB control registers. A load from a control handle reads register
+ * (offset / 8). The HTLB completes the load without a memory access.
+ *
+ * A store to a control handle runs a command. The HTLB runs it after the
+ * ROB commits the store and all older stores are done, so a command never
+ * runs on a wrong path. Younger instructions can still see the old HTLB
+ * state: software puts a FENCE after the store to order them.
+ */
+object HandleControl {
+  /** Test register. A read returns MAGIC with the HID in the low 32 bits. */
+  val REG_MAGIC_TEST: Int = 0
+  val MAGIC: BigInt = BigInt("79756b6f00000000", 16) // "yuko" in the high word
+
+  /** Store only. Invalidates the HTLB entry of the HID. The data is ignored. */
+  val REG_INVALIDATE: Int = 1
+
+  /** Load only. Returns the object base in the HTLB entry of the HID, or 0
+   * if the HTLB has no entry for it or the entry is a handle fault. The load
+   * does not start a walk. */
+  val REG_PROBE: Int = 2
 }
